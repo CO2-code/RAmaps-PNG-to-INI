@@ -1,16 +1,18 @@
 import React from 'react';
-import { Terminal, BookOpen, Layers, ArrowLeftRight, FileCode } from 'lucide-react';
+import { Terminal, BookOpen, Layers, ArrowLeftRight, FileCode, Globe } from 'lucide-react';
 
 interface HeaderProps {
   onOpenResearch: () => void;
   onOpenDecoder: () => void;
   onOpenInjector: () => void;
+  onOpenHosting: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenResearch,
   onOpenDecoder,
   onOpenInjector,
+  onOpenHosting,
 }) => {
   return (
     <header className="border-b border-neutral-800 bg-neutral-950/95 sticky top-0 z-40 px-4 lg:px-8 py-3">
@@ -40,6 +42,15 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action utility buttons */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenHosting}
+            className="px-3 py-1.5 rounded-lg bg-emerald-950/50 border border-emerald-700/60 hover:border-emerald-500 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+            title="Free hosting options: Google AI Studio vs GitHub Pages"
+          >
+            <Globe className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Host / Share</span>
+          </button>
+
           <button
             onClick={onOpenDecoder}
             className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-xs font-medium flex items-center gap-1.5 transition-colors"

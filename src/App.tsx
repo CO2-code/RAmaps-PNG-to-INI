@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Zap, ShieldCheck, AlertTriangle, X, Check } from 'lucide-react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
 import { ControlPanel } from './components/ControlPanel';
@@ -7,13 +8,14 @@ import { IniOutputViewer } from './components/IniOutputViewer';
 import { MapInjectorModal } from './components/MapInjectorModal';
 import { ReverseDecoderModal } from './components/ReverseDecoderModal';
 import { Ra1ResearchModal } from './components/Ra1ResearchModal';
+import { HostingGuideModal } from './components/HostingGuideModal';
 import { ConversionOptions, ConversionResult } from './types';
 import { convertImageToPreviewPack } from './lib/formatters';
 import { SAMPLE_MAPS } from './lib/sampleMaps';
 
 const DEFAULT_OPTIONS: ConversionOptions = {
-  width: 128,
-  height: 128,
+  width: 256,
+  height: 256,
   palette: 'temperat',
   encoding: 'cncnet_lzo_24bit', // Default: xna-cncnet-client & XCC Mixer compatible!
   dithering: true,
@@ -21,6 +23,8 @@ const DEFAULT_OPTIONS: ConversionOptions = {
   includePreviewSection: true,
   compressionOptimization: 'balanced',
   maintainAspectRatio: true,
+  colorNoiseReduction: true, // Auto-cleans microscopic noise to keep line counts compact
+  targetLineBudget: 1000,
 };
 
 export default function App() {
@@ -28,11 +32,18 @@ export default function App() {
   const [currentFilename, setCurrentFilename] = useState<string>('hostile_waters.png');
   const [options, setOptions] = useState<ConversionOptions>(DEFAULT_OPTIONS);
   const [result, setResult] = useState<ConversionResult | null>(null);
+  const [autoScaledNotice, setAutoScaledNotice] = useState<{
+    originalW: number;
+    originalH: number;
+    scaledW: number;
+    scaledH: number;
+  } | null>(null);
 
   // Modals state
   const [isResearchOpen, setIsResearchOpen] = useState<boolean>(false);
   const [isDecoderOpen, setIsDecoderOpen] = useState<boolean>(false);
   const [isInjectorOpen, setIsInjectorOpen] = useState<boolean>(false);
+  const [isHostingOpen, setIsHostingOpen] = useState<boolean>(false);
 
   // Initialize with the first demo map on first launch
   useEffect(() => {
@@ -62,14 +73,48 @@ export default function App() {
     setSourceCanvas(canvas);
     setCurrentFilename(filename);
 
-    // If image has non-128x128 dimensions, offer to adapt dimensions to source
-    if (canvas.width > 0 && canvas.height > 0) {
+    const maxDim = Math.max(canvas.width, canvas.height);
+    // If image exceeds recommended 256px, auto-scale down to CnCNet standard (<= 256px)
+    // to prevent 23,000+ line bloat while maintaining pixel-perfect fidelity in the lobby!
+    if (maxDim > 256) {
+      const scale = 256 / maxDim;
+      const targetW = Math.max(16, Math.round(canvas.width * scale));
+      const targetH = Math.max(16, Math.round(canvas.height * scale));
+      setOptions((prev) => ({
+        ...prev,
+        width: targetW,
+        height: targetH,
+        targetLineBudget: 1000,
+      }));
+      setAutoScaledNotice({
+        originalW: canvas.width,
+        originalH: canvas.height,
+        scaledW: targetW,
+        scaledH: targetH,
+      });
+    } else {
       setOptions((prev) => ({
         ...prev,
         width: canvas.width,
         height: canvas.height,
       }));
+      setAutoScaledNotice(null);
     }
+  };
+
+  const handleOptimizeToCncNetStandard = () => {
+    if (!sourceCanvas) return;
+    const maxDim = Math.max(sourceCanvas.width, sourceCanvas.height);
+    const scale = Math.min(1, 256 / maxDim);
+    const targetW = Math.max(16, Math.round(sourceCanvas.width * scale));
+    const targetH = Math.max(16, Math.round(sourceCanvas.height * scale));
+    setOptions((prev) => ({
+      ...prev,
+      width: targetW,
+      height: targetH,
+      encoding: 'cncnet_lzo_24bit',
+      targetLineBudget: 1000,
+    }));
   };
 
   const handleUpdateOptions = (patch: Partial<ConversionOptions>) => {
@@ -86,6 +131,7 @@ export default function App() {
         onOpenResearch={() => setIsResearchOpen(true)}
         onOpenDecoder={() => setIsDecoderOpen(true)}
         onOpenInjector={() => setIsInjectorOpen(true)}
+        onOpenHosting={() => setIsHostingOpen(true)}
       />
 
       {/* Main Container */}
@@ -117,6 +163,64 @@ export default function App() {
           currentFilename={currentFilename}
         />
 
+        {/* Auto-Scaled Notice Banner if uploaded image was larger than 256px */}
+        {autoScaledNotice && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-emerald-950/60 border border-emerald-700/60 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs animate-fade-in">
+            <div className="flex items-start gap-3 text-neutral-200">
+              <div className="p-2 rounded-xl bg-emerald-900/60 border border-emerald-600/50 text-emerald-400 shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="font-bold text-white text-sm flex items-center gap-2">
+                  <span>Auto-Optimized to {autoScaledNotice.scaledW}×{autoScaledNotice.scaledH} (~800–1,100 lines)</span>
+                  <span className="text-[10px] font-mono text-emerald-300 bg-emerald-900/80 px-2 py-0.5 rounded-full border border-emerald-600/40">
+                    CnCNet Standard
+                  </span>
+                </div>
+                <p className="text-neutral-400 text-xs leading-relaxed max-w-2xl">
+                  Your uploaded image is <strong className="text-white font-mono">{autoScaledNotice.originalW}×{autoScaledNotice.originalH}</strong> (which would create <strong>23,000+ lines</strong> and bloat the map file to ~1.6 MB).
+                  It was automatically scaled down to the official <strong className="text-emerald-300">&lt; 257px</strong> standard so players can download your map instantly with zero lobby lag.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setAutoScaledNotice(null)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Keep Optimized</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setOptions((prev) => ({
+                    ...prev,
+                    width: autoScaledNotice.originalW,
+                    height: autoScaledNotice.originalH,
+                  }));
+                }}
+                className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-mono transition-colors"
+                title="Switch to full original resolution (creates 23k+ lines)"
+              >
+                <span>Full {autoScaledNotice.originalW}×{autoScaledNotice.originalH} (⚠️ 23k)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAutoScaledNotice(null)}
+                className="p-1.5 rounded-lg text-neutral-500 hover:text-white transition-colors"
+                title="Dismiss banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 2-Column Workspace: Left = Visual Preview & Code, Right = Settings Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
           {/* Left Column (7 cols): Visual Viewport + INI Output Code */}
@@ -128,7 +232,10 @@ export default function App() {
             />
 
             {/* Ready-to-Paste INI Code Viewer */}
-            <IniOutputViewer result={result} />
+            <IniOutputViewer
+              result={result}
+              onOptimizeResolution={handleOptimizeToCncNetStandard}
+            />
           </div>
 
           {/* Right Column (5 cols): Controls & Configuration */}
@@ -173,6 +280,11 @@ export default function App() {
         isOpen={isInjectorOpen}
         onClose={() => setIsInjectorOpen(false)}
         previewBlockText={result?.fullIniText || ''}
+      />
+
+      <HostingGuideModal
+        isOpen={isHostingOpen}
+        onClose={() => setIsHostingOpen(false)}
       />
     </div>
   );

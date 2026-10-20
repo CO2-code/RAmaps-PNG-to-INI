@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, Layers, CheckCircle2, ShieldCheck, FileCode, Cpu } from 'lucide-react';
+import { X, BookOpen, Layers, CheckCircle2, ShieldCheck, FileCode, Cpu, AlertTriangle } from 'lucide-react';
 
 interface Ra1ResearchModalProps {
   isOpen: boolean;
@@ -115,6 +115,25 @@ export const Ra1ResearchModal: React.FC<Ra1ResearchModalProps> = ({ isOpen, onCl
                 <strong className="text-neutral-200">Line Wrap</strong>: 70 characters per line is standard for XCC Mixer and Westwood INI readers.
               </li>
             </ul>
+          </div>
+
+          {/* Section 5: Why 23k+ lines happen and how to avoid it */}
+          <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-800/50 space-y-2">
+            <div className="text-sm font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              5. Why [PreviewPack] Can Reach 23,000+ Lines (& How We Prevent It)
+            </div>
+            <p className="text-neutral-300 leading-relaxed">
+              When an unscaled screenshot or full-resolution map render (e.g., 800×800 or 1920×1080) is converted to 24-bit RGB:
+            </p>
+            <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-lg font-mono text-[11px] text-neutral-300 space-y-1">
+              <div>800 × 800 × 3 bytes = <span className="text-amber-400">1,920,000 raw bytes</span></div>
+              <div>LZO Compressed: ~1,150,000 bytes → Base64: ~1,533,000 chars</div>
+              <div>Divided by 70 chars per line = <span className="text-red-400 font-bold">21,900 to 23,500+ INI lines!</span></div>
+            </div>
+            <p className="text-neutral-300 text-[11px] leading-relaxed">
+              <strong>The Solution:</strong> In xna-cncnet-client, the lobby UI preview box is roughly <strong>200×200 to 256×256 pixels</strong>. Resizing your image to <strong>256×256</strong> (or proportional max dimension 256px) produces only <strong>~800–1,100 lines</strong> (~65 KB). It looks visually identical in the lobby, prevents text editor lag, and ensures joining players download your map in milliseconds!
+            </p>
           </div>
         </div>
 

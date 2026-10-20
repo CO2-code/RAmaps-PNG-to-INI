@@ -14,6 +14,8 @@ export interface ConversionOptions {
   includePreviewSection: boolean;
   compressionOptimization: 'balanced' | 'fast' | 'max';
   maintainAspectRatio: boolean;
+  colorNoiseReduction?: boolean; // Smooths subtle RGB noise to boost LZO compression and reduce line counts
+  targetLineBudget?: number; // Optional target max lines for auto-scaling
 }
 
 export interface ConversionResult {
