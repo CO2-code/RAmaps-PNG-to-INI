@@ -1,0 +1,6 @@
+{
+  "name": "RA1 Map PreviewPack Generator",
+  "description": "Convert PNG images into [Preview] and [PreviewPack] INI sections for Command & Conquer: Red Alert 1 maps (.mpr / .ini) with LCW compression, palette matching, and preview decoder.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
