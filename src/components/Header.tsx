@@ -1,18 +1,18 @@
 import React from 'react';
-import { Terminal, BookOpen, Layers, ArrowLeftRight, FileCode, Globe } from 'lucide-react';
+import { Terminal, BookOpen, Layers, ArrowLeftRight, FileCode, Compass } from 'lucide-react';
 
 interface HeaderProps {
   onOpenResearch: () => void;
   onOpenDecoder: () => void;
   onOpenInjector: () => void;
-  onOpenHosting: () => void;
+  onOpenMprToPng: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenResearch,
   onOpenDecoder,
   onOpenInjector,
-  onOpenHosting,
+  onOpenMprToPng,
 }) => {
   return (
     <header className="border-b border-neutral-800 bg-neutral-950/95 sticky top-0 z-40 px-4 lg:px-8 py-3">
@@ -28,14 +28,14 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold tracking-wider text-white text-base font-['Rajdhani',sans-serif]">
-                RED ALERT 1 <span className="text-red-500">PREVIEWPACK</span> GENERATOR
+                RED ALERT 1 <span className="text-red-500">PREVIEWPACK</span> & MAP STUDIO
               </span>
               <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 px-1.5 py-0.5 rounded">
-                LCW Engine
+                LCW & LZO Engine
               </span>
             </div>
             <p className="text-xs text-neutral-400 font-mono">
-              Convert PNG images to [Preview] & [PreviewPack] for .MPR / .INI map files
+              PNG ⇄ [PreviewPack] & full .MPR / .INI map preview generator
             </p>
           </div>
         </div>
@@ -43,12 +43,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Action utility buttons */}
         <div className="flex items-center gap-2">
           <button
-            onClick={onOpenHosting}
-            className="px-3 py-1.5 rounded-lg bg-emerald-950/50 border border-emerald-700/60 hover:border-emerald-500 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-            title="Free hosting options: Google AI Studio vs GitHub Pages"
+            onClick={onOpenMprToPng}
+            className="px-3 py-1.5 rounded-lg bg-red-950/80 border border-red-600/70 hover:border-red-500 text-red-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-red-950/40 animate-pulse hover:animate-none cursor-pointer"
+            title="Convert Red Alert 1 *.MPR map files to *.PNG preview images (Iran RAFullMapPreviewGenerator port)"
           >
-            <Globe className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Host / Share</span>
+            <Compass className="w-3.5 h-3.5 text-red-400" />
+            <span>*.MPR → *.PNG</span>
           </button>
 
           <button

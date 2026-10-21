@@ -1,24 +1,35 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Sparkles, Clipboard, Check } from 'lucide-react';
+import { Upload, Image as ImageIcon, Sparkles, Clipboard, Check, Compass } from 'lucide-react';
 import { SAMPLE_MAPS, SampleMap } from '../lib/sampleMaps';
 
 interface ImageUploaderProps {
   onImageLoaded: (canvas: HTMLCanvasElement, filename: string) => void;
   currentFilename: string;
+  onOpenMprModal?: () => void;
 }
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
   onImageLoaded,
   currentFilename,
+  onOpenMprModal,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [justPasted, setJustPasted] = useState(false);
 
-  // Handle image file load
+  // Handle image or map file load
   const processImageFile = (file: File) => {
+    const isMapFile =
+      file.name.toLowerCase().endsWith('.mpr') ||
+      file.name.toLowerCase().endsWith('.ini');
+
+    if (isMapFile && onOpenMprModal) {
+      onOpenMprModal();
+      return;
+    }
+
     if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (PNG, JPEG, WebP, or BMP).');
+      alert('Please select an image file (PNG, JPG, WebP) or click the "*.MPR → *.PNG" button above for map files.');
       return;
     }
 
@@ -165,6 +176,17 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             {sample.name}
           </button>
         ))}
+
+        {onOpenMprModal && (
+          <button
+            type="button"
+            onClick={onOpenMprModal}
+            className="ml-auto px-2.5 py-1 rounded-lg bg-red-950/60 border border-red-800/60 hover:border-red-600 text-red-300 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
+          >
+            <Compass className="w-3.5 h-3.5 text-red-400" />
+            <span>Generate PNG from *.MPR Map</span>
+          </button>
+        )}
       </div>
     </div>
   );

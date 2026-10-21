@@ -8,7 +8,7 @@ import { IniOutputViewer } from './components/IniOutputViewer';
 import { MapInjectorModal } from './components/MapInjectorModal';
 import { ReverseDecoderModal } from './components/ReverseDecoderModal';
 import { Ra1ResearchModal } from './components/Ra1ResearchModal';
-import { HostingGuideModal } from './components/HostingGuideModal';
+import { MprToPngModal } from './components/MprToPngModal';
 import { ConversionOptions, ConversionResult } from './types';
 import { convertImageToPreviewPack } from './lib/formatters';
 import { SAMPLE_MAPS } from './lib/sampleMaps';
@@ -43,7 +43,7 @@ export default function App() {
   const [isResearchOpen, setIsResearchOpen] = useState<boolean>(false);
   const [isDecoderOpen, setIsDecoderOpen] = useState<boolean>(false);
   const [isInjectorOpen, setIsInjectorOpen] = useState<boolean>(false);
-  const [isHostingOpen, setIsHostingOpen] = useState<boolean>(false);
+  const [isMprModalOpen, setIsMprModalOpen] = useState<boolean>(false);
 
   // Initialize with the first demo map on first launch
   useEffect(() => {
@@ -131,7 +131,7 @@ export default function App() {
         onOpenResearch={() => setIsResearchOpen(true)}
         onOpenDecoder={() => setIsDecoderOpen(true)}
         onOpenInjector={() => setIsInjectorOpen(true)}
-        onOpenHosting={() => setIsHostingOpen(true)}
+        onOpenMprToPng={() => setIsMprModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -155,12 +155,23 @@ export default function App() {
               <code className="text-amber-400 font-mono">[PreviewPack]</code> sections ready to paste directly into your map files.
             </p>
           </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setIsMprModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-red-950/70 hover:bg-red-900/80 border border-red-600/70 text-red-200 hover:text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-red-950/50 transition-all cursor-pointer"
+            >
+              <Zap className="w-4 h-4 text-red-400" />
+              <span>*.MPR → *.PNG Map Generator</span>
+            </button>
+          </div>
         </div>
 
         {/* Upload Zone */}
         <ImageUploader
           onImageLoaded={handleImageLoaded}
           currentFilename={currentFilename}
+          onOpenMprModal={() => setIsMprModalOpen(true)}
         />
 
         {/* Auto-Scaled Notice Banner if uploaded image was larger than 256px */}
@@ -282,9 +293,10 @@ export default function App() {
         previewBlockText={result?.fullIniText || ''}
       />
 
-      <HostingGuideModal
-        isOpen={isHostingOpen}
-        onClose={() => setIsHostingOpen(false)}
+      <MprToPngModal
+        isOpen={isMprModalOpen}
+        onClose={() => setIsMprModalOpen(false)}
+        onSendToGenerator={handleImageLoaded}
       />
     </div>
   );
