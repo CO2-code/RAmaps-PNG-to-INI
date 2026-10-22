@@ -15,6 +15,8 @@ import {
   ArrowRight,
   Upload,
   Compass,
+  Image as ImageIcon,
+  Cpu,
 } from 'lucide-react';
 import {
   parseMprMap,
@@ -23,6 +25,10 @@ import {
   MprRenderOptions,
   PLAYER_SPAWN_COLORS,
 } from '../lib/mprParser';
+import {
+  renderMprOriginalAssets,
+  preloadMapAssets,
+} from '../lib/raOriginalRenderer';
 import { SAMPLE_MPR_MAPS } from '../lib/sampleMprMaps';
 import { decodePreviewFromIni } from '../lib/formatters';
 
@@ -51,10 +57,18 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
   // View mode: Full map render vs Embedded [PreviewPack] if present
   const [viewMode, setViewMode] = useState<'full_render' | 'embedded_preview'>('full_render');
 
-  // Render options (matching Iran's RAFullMapPreviewGenerator features)
+  // Asset Engine: 'original' (Authentic Westwood 24x24 game tiles/SHP) vs 'vector' (Schematic Tactical)
+  const [assetEngine, setAssetEngine] = useState<'original' | 'vector'>('original');
+  const [loadingAssets, setLoadingAssets] = useState<boolean>(false);
+  const [assetProgress, setAssetProgress] = useState<{ loaded: number; total: number } | null>(null);
+
+  // Original asset scale multiplier: 1.0 = native 24px, 0.5 = 12px, 0.25 = 6px
+  const [originalScale, setOriginalScale] = useState<number>(0.5);
+
+  // Vector render options
   const [renderOptions, setRenderOptions] = useState<MprRenderOptions>({
-    cellSize: 6, // 6px per cell = ~528x612 or ~768x768
-    onlyDrawVisible: true, // Matches Iran's --drawvisibleonly default
+    cellSize: 6,
+    onlyDrawVisible: true,
     showWaypoints: true,
     showOre: true,
     showStructures: true,
@@ -78,7 +92,6 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     try {
       const parsed = parseMprMap(rawFileText);
       setMapData(parsed);
-      // Auto-set view mode to full_render, or embedded if no mappack
       if (!parsed.hasMapPack && parsed.hasEmbeddedPreview) {
         setViewMode('embedded_preview');
       } else {
@@ -89,13 +102,13 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     }
   }, [rawFileText]);
 
-  // Re-render canvas when mapData, renderOptions, or viewMode change
+  // Re-render canvas when mapData, renderOptions, assetEngine, or viewMode change
   useEffect(() => {
     if (!canvasRef.current || !mapData) return;
 
-    if (viewMode === 'full_render') {
-      renderMprToCanvas(mapData, renderOptions, canvasRef.current);
-    } else if (viewMode === 'embedded_preview' && mapData.embeddedPreview) {
+    let isCancelled = false;
+
+    if (viewMode === 'embedded_preview' && mapData.embeddedPreview) {
       try {
         const decoded = decodePreviewFromIni(
           mapData.embeddedPreview.previewPackText,
@@ -115,8 +128,53 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
       } catch (err) {
         console.warn('Failed to decode embedded preview:', err);
       }
+      return;
     }
-  }, [mapData, renderOptions, viewMode]);
+
+    if (viewMode === 'full_render') {
+      if (assetEngine === 'original') {
+        setLoadingAssets(true);
+        // Preload assets then render with authentic game graphics
+        preloadMapAssets(mapData, (loaded, total) => {
+          if (!isCancelled) {
+            setAssetProgress({ loaded, total });
+          }
+        })
+          .then(() => {
+            if (isCancelled || !canvasRef.current) return;
+            return renderMprOriginalAssets(
+              mapData,
+              {
+                onlyDrawVisible: renderOptions.onlyDrawVisible,
+                showWaypoints: renderOptions.showWaypoints,
+                showOre: renderOptions.showOre,
+                showStructures: renderOptions.showStructures,
+                scaleMultiplier: originalScale,
+              },
+              canvasRef.current
+            );
+          })
+          .catch((err) => {
+            console.warn('Failed original asset render, falling back to vector:', err);
+            if (!isCancelled && canvasRef.current) {
+              renderMprToCanvas(mapData, renderOptions, canvasRef.current);
+            }
+          })
+          .finally(() => {
+            if (!isCancelled) {
+              setLoadingAssets(false);
+            }
+          });
+      } else {
+        // Fast vector tactical render
+        renderMprToCanvas(mapData, renderOptions, canvasRef.current);
+      }
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [mapData, renderOptions, viewMode, assetEngine, originalScale]);
 
   if (!isOpen) return null;
 
@@ -141,7 +199,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     }
   };
 
-  const handleDownloadPng = (scaleMultiplier: number = 1) => {
+  const handleDownloadPng = async (scaleMultiplier: number = 1) => {
     if (!canvasRef.current || !mapData) return;
 
     let exportCanvas = canvasRef.current;
@@ -149,21 +207,36 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     // If higher scale is requested, render onto a dedicated canvas
     if (scaleMultiplier !== 1 && viewMode === 'full_render') {
       exportCanvas = document.createElement('canvas');
-      renderMprToCanvas(
-        mapData,
-        {
-          ...renderOptions,
-          cellSize: renderOptions.cellSize * scaleMultiplier,
-        },
-        exportCanvas
-      );
+      if (assetEngine === 'original') {
+        await renderMprOriginalAssets(
+          mapData,
+          {
+            onlyDrawVisible: renderOptions.onlyDrawVisible,
+            showWaypoints: renderOptions.showWaypoints,
+            showOre: renderOptions.showOre,
+            showStructures: renderOptions.showStructures,
+            scaleMultiplier: originalScale * scaleMultiplier,
+          },
+          exportCanvas
+        );
+      } else {
+        renderMprToCanvas(
+          mapData,
+          {
+            ...renderOptions,
+            cellSize: renderOptions.cellSize * scaleMultiplier,
+          },
+          exportCanvas
+        );
+      }
     }
 
     const url = exportCanvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
     const cleanBaseName = uploadedFileName.replace(/\.[^/.]+$/, '');
-    a.download = `${cleanBaseName}_preview_${exportCanvas.width}x${exportCanvas.height}.png`;
+    const engineTag = assetEngine === 'original' ? 'original_graphics' : 'tactical';
+    a.download = `${cleanBaseName}_${engineTag}_${exportCanvas.width}x${exportCanvas.height}.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -171,7 +244,6 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
   const handleSendToApp = () => {
     if (!canvasRef.current || !mapData || !onSendToGenerator) return;
-    // Create an independent copy of the canvas
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = canvasRef.current.width;
     tempCanvas.height = canvasRef.current.height;
@@ -199,11 +271,11 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                   Red Alert 1 <span className="text-red-500">*.MPR → *.PNG</span> Map Generator
                 </h2>
                 <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 bg-emerald-950/70 border border-emerald-800/60 px-2 py-0.5 rounded">
-                  Format80 / Iran Engine
+                  {assetEngine === 'original' ? 'Original Westwood Assets' : 'Tactical Vector'}
                 </span>
               </div>
               <p className="text-xs text-neutral-400 font-mono">
-                Ported from Iran's RAFullMapPreviewGenerator · Generates full battlefield renders with ore, gems, waypoints & units
+                Ported from Iran's RAFullMapPreviewGenerator · Generate preview images using original 24×24 game tiles or tactical vector
               </p>
             </div>
           </div>
@@ -297,35 +369,86 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
           {/* Left Column: Canvas Viewport (7 cols) */}
           <div className="lg:col-span-7 xl:col-span-8 space-y-4">
             {/* View Mode Tabs (if embedded preview is available) */}
-            {mapData?.hasEmbeddedPreview && (
-              <div className="flex items-center gap-2 p-1 rounded-xl bg-neutral-950 border border-neutral-800 w-fit text-xs font-mono">
-                <button
-                  onClick={() => setViewMode('full_render')}
-                  className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-                    viewMode === 'full_render'
-                      ? 'bg-neutral-800 text-white font-bold shadow-sm'
-                      : 'text-neutral-400 hover:text-neutral-200'
-                  }`}
-                >
-                  <Compass className="w-3.5 h-3.5 text-red-400" />
-                  <span>Full Map Render (Iran Engine)</span>
-                </button>
-                <button
-                  onClick={() => setViewMode('embedded_preview')}
-                  className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-                    viewMode === 'embedded_preview'
-                      ? 'bg-neutral-800 text-white font-bold shadow-sm'
-                      : 'text-neutral-400 hover:text-neutral-200'
-                  }`}
-                >
-                  <Eye className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Embedded [PreviewPack] ({mapData.embeddedPreview?.width}×{mapData.embeddedPreview?.height})</span>
-                </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {mapData?.hasEmbeddedPreview ? (
+                <div className="flex items-center gap-2 p-1 rounded-xl bg-neutral-950 border border-neutral-800 text-xs font-mono">
+                  <button
+                    onClick={() => setViewMode('full_render')}
+                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                      viewMode === 'full_render'
+                        ? 'bg-neutral-800 text-white font-bold shadow-sm'
+                        : 'text-neutral-400 hover:text-neutral-200'
+                    }`}
+                  >
+                    <Compass className="w-3.5 h-3.5 text-red-400" />
+                    <span>Full Battlefield Render</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('embedded_preview')}
+                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                      viewMode === 'embedded_preview'
+                        ? 'bg-neutral-800 text-white font-bold shadow-sm'
+                        : 'text-neutral-400 hover:text-neutral-200'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Embedded [PreviewPack] ({mapData.embeddedPreview?.width}×{mapData.embeddedPreview?.height})</span>
+                  </button>
+                </div>
+              ) : (
+                <div />
+              )}
+
+              {/* Asset Mode Indicator Badge */}
+              <div className="flex items-center gap-2 text-[11px] font-mono">
+                {assetEngine === 'original' ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Authentic 24×24 Game Graphics Active</span>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400">
+                    Tactical Vector Mode
+                  </span>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Canvas Container */}
-            <div className="relative border border-neutral-800 rounded-2xl bg-black p-4 flex flex-col items-center justify-center min-h-[360px] overflow-hidden shadow-inner group">
+            <div className="relative border border-neutral-800 rounded-2xl bg-black p-4 flex flex-col items-center justify-center min-h-[380px] overflow-hidden shadow-inner group">
+              {/* Asset Loading Overlay */}
+              {loadingAssets && (
+                <div className="absolute inset-0 z-20 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 space-y-3 animate-fade-in">
+                  <div className="w-10 h-10 border-4 border-red-500 border-t-transparent rounded-full animate-spin" />
+                  <div className="text-white font-bold text-sm tracking-wide">
+                    Loading Original Westwood Assets Archive...
+                  </div>
+                  {assetProgress && assetProgress.total > 0 && (
+                    <div className="w-72 space-y-1.5 text-center">
+                      <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden border border-neutral-700">
+                        <div
+                          className="bg-gradient-to-r from-red-600 via-amber-500 to-emerald-500 h-2 rounded-full transition-all duration-150"
+                          style={{
+                            width: `${Math.min(100, Math.round((assetProgress.loaded / Math.max(1, assetProgress.total)) * 100))}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="text-[11px] font-mono text-neutral-300 flex items-center justify-between">
+                        <span>
+                          {(assetProgress.loaded / (1024 * 1024)).toFixed(1)} MB / {(assetProgress.total / (1024 * 1024)).toFixed(1)} MB
+                        </span>
+                        <span className="text-emerald-400 font-bold">
+                          {Math.min(100, Math.round((assetProgress.loaded / Math.max(1, assetProgress.total)) * 100))}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-neutral-400 font-mono text-center max-w-sm">
+                    Unpacking authentic 24×24 .tem tiles & .shp sprites from <code className="text-amber-400">ra_data.pack</code>
+                  </p>
+                </div>
+              )}
+
               <div className="max-h-[500px] max-w-full overflow-auto flex items-center justify-center p-2">
                 <canvas
                   ref={canvasRef}
@@ -424,12 +547,99 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
               </div>
             )}
 
+            {/* Asset Engine Selector (Original Assets vs Tactical Vector) */}
+            {viewMode === 'full_render' && (
+              <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span>Asset Graphics Mode</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setAssetEngine('original')}
+                    className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all ${
+                      assetEngine === 'original'
+                        ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-md shadow-emerald-950/30'
+                        : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700 text-neutral-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold flex items-center gap-1.5 text-emerald-400">
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Original Assets
+                      </span>
+                      {assetEngine === 'original' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                    </div>
+                    <p className="text-[10px] text-neutral-400 leading-tight">
+                      Authentic 24×24 Westwood tiles, trees, ore & buildings from Iran engine
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => setAssetEngine('vector')}
+                    className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all ${
+                      assetEngine === 'vector'
+                        ? 'bg-red-950/40 border-red-500 text-white shadow-md shadow-red-950/30'
+                        : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700 text-neutral-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold flex items-center gap-1.5 text-red-400">
+                        <Cpu className="w-3.5 h-3.5" />
+                        Tactical Vector
+                      </span>
+                      {assetEngine === 'vector' && <Check className="w-3.5 h-3.5 text-red-400" />}
+                    </div>
+                    <p className="text-[10px] text-neutral-400 leading-tight">
+                      Instant schematic mini-map with crisp tactical terrain polygons
+                    </p>
+                  </button>
+                </div>
+
+                {/* Resolution / Scale Selector for Original Assets */}
+                {assetEngine === 'original' && (
+                  <div className="pt-2 border-t border-neutral-900">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-neutral-400 uppercase">
+                        Original Asset Scale:
+                      </span>
+                      <span className="text-xs font-mono text-emerald-400">
+                        {originalScale === 1.0 ? 'Native (24px/cell)' : originalScale === 0.5 ? 'Tactical (12px/cell)' : 'Compact (6px/cell)'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        { label: 'Compact (6px)', scale: 0.25 },
+                        { label: 'Tactical (12px)', scale: 0.5 },
+                        { label: 'Native (24px)', scale: 1.0 },
+                      ].map((item) => (
+                        <button
+                          key={item.scale}
+                          onClick={() => setOriginalScale(item.scale)}
+                          className={`py-1.5 px-2 rounded-lg text-[10px] font-mono transition-colors ${
+                            originalScale === item.scale
+                              ? 'bg-emerald-950 border border-emerald-700 text-emerald-300 font-bold'
+                              : 'bg-neutral-900/70 border border-neutral-800 text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Rendering Controls */}
             {viewMode === 'full_render' && (
               <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-4">
                 <div className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider">
                   <Sliders className="w-4 h-4 text-red-500" />
-                  <span>Iran Engine Render Options</span>
+                  <span>Display & Layer Options</span>
                 </div>
 
                 {/* Draw Visible Only Toggle (--drawvisibleonly) */}
@@ -503,40 +713,6 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                     className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
                   />
                 </label>
-
-                {/* Cell Scale Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-bold text-neutral-400 uppercase">
-                      Pixel Detail Level:
-                    </span>
-                    <span className="text-xs font-mono text-emerald-400">
-                      {renderOptions.cellSize}px per cell
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { label: 'Compact (3px)', size: 3 },
-                      { label: 'Tactical (6px)', size: 6 },
-                      { label: 'HD (8px)', size: 8 },
-                      { label: 'Ultra (12px)', size: 12 },
-                    ].map((lvl) => (
-                      <button
-                        key={lvl.size}
-                        onClick={() =>
-                          setRenderOptions((prev) => ({ ...prev, cellSize: lvl.size }))
-                        }
-                        className={`py-1.5 px-1 rounded-lg text-[10px] font-mono transition-colors ${
-                          renderOptions.cellSize === lvl.size
-                            ? 'bg-neutral-800 text-white font-bold border border-neutral-700'
-                            : 'bg-neutral-900/60 text-neutral-400 hover:text-white border border-neutral-800'
-                        }`}
-                      >
-                        {lvl.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -547,7 +723,9 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                 className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-950/60 transition-all cursor-pointer"
               >
                 <Download className="w-4 h-4" />
-                <span>Download .PNG Map Image</span>
+                <span>
+                  Download .PNG Map Image ({canvasRef.current?.width || 0}×{canvasRef.current?.height || 0})
+                </span>
               </button>
 
               <button
@@ -574,7 +752,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
         {/* Footer */}
         <div className="p-4 sm:p-5 border-t border-neutral-800 bg-neutral-950 flex items-center justify-between text-xs text-neutral-500 font-mono">
-          <div>Supports Red Alert 1 .MPR and .INI maps (both multiplayer and single-player missions)</div>
+          <div>Supports Red Alert 1 .MPR and .INI maps with authentic Westwood game assets</div>
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium cursor-pointer"
