@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "electron:dev": "vite build && electron .",
+    "electron:build": "vite build && electron-builder --win portable --x64"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -32,6 +34,34 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
-    "@types/express": "^4.17.21"
+    "@types/express": "^4.17.21",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "description": "Red Alert 1 PNG to INI [PreviewPack] Generator",
+  "author": "CO2-code",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.co2code.ramaps-png-to-ini",
+    "productName": "RA1 PNG to INI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "RA1-PNG-to-INI-${version}.${ext}"
+    }
   }
 }
