@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, BookOpen, Layers, ArrowLeftRight, FileCode, Compass } from 'lucide-react';
+import { Terminal, BookOpen, Layers, ArrowLeftRight, FileCode, Compass, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
   onOpenResearch: () => void;
@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <p className="text-xs text-neutral-400 font-mono">
-              PNG ⇄ [PreviewPack] & full .MPR / .INI map preview generator
+              PNG ⇄ [PreviewPack] & authentic Westwood 24×24 original assets map generator
             </p>
           </div>
         </div>
@@ -44,11 +44,14 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenMprToPng}
-            className="px-3 py-1.5 rounded-lg bg-red-950/80 border border-red-600/70 hover:border-red-500 text-red-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-red-950/40 animate-pulse hover:animate-none cursor-pointer"
-            title="Convert Red Alert 1 *.MPR map files to *.PNG preview images (Iran RAFullMapPreviewGenerator port)"
+            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-red-950 via-neutral-900 to-emerald-950 border border-emerald-500/70 hover:border-emerald-400 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 hover:shadow-emerald-900/50 cursor-pointer"
+            title="Convert Red Alert 1 *.MPR map files to *.PNG preview images with authentic Westwood 24×24 game assets (Iran RAFullMapPreviewGenerator port)"
           >
-            <Compass className="w-3.5 h-3.5 text-red-400" />
-            <span>*.MPR → *.PNG</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span>⭐ Original Assets & MPR Map</span>
+            <span className="hidden sm:inline-block text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              24×24
+            </span>
           </button>
 
           <button

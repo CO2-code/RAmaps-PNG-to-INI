@@ -16,6 +16,8 @@ import {
   Upload,
   Compass,
   Image as ImageIcon,
+  FolderArchive,
+  AlertTriangle,
   Cpu,
 } from 'lucide-react';
 import {
@@ -28,6 +30,10 @@ import {
 import {
   renderMprOriginalAssets,
   preloadMapAssets,
+  loadOriginalAssetsManually,
+  getOriginalAssetsError,
+  retryOriginalAssetsLoad,
+  isOriginalAssetsLoaded,
 } from '../lib/raOriginalRenderer';
 import { SAMPLE_MPR_MAPS } from '../lib/sampleMprMaps';
 import { decodePreviewFromIni } from '../lib/formatters';
@@ -44,6 +50,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
   onSendToGenerator,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const manualPackInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [activeSource, setActiveSource] = useState<'sample' | 'upload'>('sample');
@@ -61,6 +68,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
   const [assetEngine, setAssetEngine] = useState<'original' | 'vector'>('original');
   const [loadingAssets, setLoadingAssets] = useState<boolean>(false);
   const [assetProgress, setAssetProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [assetLoadError, setAssetLoadError] = useState<string | null>(null);
 
   // Original asset scale multiplier: 1.0 = native 24px, 0.5 = 12px, 0.25 = 6px
   const [originalScale, setOriginalScale] = useState<number>(0.5);
@@ -134,6 +142,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     if (viewMode === 'full_render') {
       if (assetEngine === 'original') {
         setLoadingAssets(true);
+        setAssetLoadError(null);
         // Preload assets then render with authentic game graphics
         preloadMapAssets(mapData, (loaded, total) => {
           if (!isCancelled) {
@@ -142,6 +151,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
         })
           .then(() => {
             if (isCancelled || !canvasRef.current) return;
+            setAssetLoadError(null);
             return renderMprOriginalAssets(
               mapData,
               {
@@ -155,9 +165,14 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
             );
           })
           .catch((err) => {
-            console.warn('Failed original asset render, falling back to vector:', err);
-            if (!isCancelled && canvasRef.current) {
-              renderMprToCanvas(mapData, renderOptions, canvasRef.current);
+            console.warn('Failed original asset render:', err);
+            if (!isCancelled) {
+              const msg = err instanceof Error ? err.message : String(err);
+              setAssetLoadError(msg);
+              // Render tactical vector as visual fallback while displaying error banner
+              if (canvasRef.current) {
+                renderMprToCanvas(mapData, renderOptions, canvasRef.current);
+              }
             }
           })
           .finally(() => {
@@ -167,6 +182,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
           });
       } else {
         // Fast vector tactical render
+        setAssetLoadError(null);
         renderMprToCanvas(mapData, renderOptions, canvasRef.current);
       }
     }
@@ -175,6 +191,68 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
       isCancelled = true;
     };
   }, [mapData, renderOptions, viewMode, assetEngine, originalScale]);
+
+  const handleManualPackUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    try {
+      setLoadingAssets(true);
+      const buffer = await file.arrayBuffer();
+      const success = loadOriginalAssetsManually(buffer);
+      if (success) {
+        setAssetLoadError(null);
+        if (canvasRef.current && mapData) {
+          await renderMprOriginalAssets(
+            mapData,
+            {
+              onlyDrawVisible: renderOptions.onlyDrawVisible,
+              showWaypoints: renderOptions.showWaypoints,
+              showOre: renderOptions.showOre,
+              showStructures: renderOptions.showStructures,
+              scaleMultiplier: originalScale,
+            },
+            canvasRef.current
+          );
+        }
+      } else {
+        setAssetLoadError(getOriginalAssetsError() || 'Failed to unpack provided archive file');
+      }
+    } catch (err: any) {
+      setAssetLoadError(err?.message || 'Failed to read file');
+    } finally {
+      setLoadingAssets(false);
+    }
+  };
+
+  const handleRetryAssetLoad = async () => {
+    setAssetLoadError(null);
+    setLoadingAssets(true);
+    try {
+      const ok = await retryOriginalAssetsLoad((loaded, total) => {
+        setAssetProgress({ loaded, total });
+      });
+      if (ok && canvasRef.current && mapData) {
+        setAssetLoadError(null);
+        await renderMprOriginalAssets(
+          mapData,
+          {
+            onlyDrawVisible: renderOptions.onlyDrawVisible,
+            showWaypoints: renderOptions.showWaypoints,
+            showOre: renderOptions.showOre,
+            showStructures: renderOptions.showStructures,
+            scaleMultiplier: originalScale,
+          },
+          canvasRef.current
+        );
+      } else {
+        setAssetLoadError(getOriginalAssetsError() || 'Could not load asset pack');
+      }
+    } catch (err: any) {
+      setAssetLoadError(err?.message || 'Retry failed');
+    } finally {
+      setLoadingAssets(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -368,50 +446,189 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
         <div className="p-4 sm:p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left Column: Canvas Viewport (7 cols) */}
           <div className="lg:col-span-7 xl:col-span-8 space-y-4">
-            {/* View Mode Tabs (if embedded preview is available) */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {mapData?.hasEmbeddedPreview ? (
-                <div className="flex items-center gap-2 p-1 rounded-xl bg-neutral-950 border border-neutral-800 text-xs font-mono">
+            {/* Primary Engine Switcher: Westwood 24×24 Original Assets vs Tactical Vector */}
+            <div className="flex flex-col gap-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2.5 bg-neutral-950 p-2.5 rounded-2xl border border-neutral-800 shadow-md">
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-neutral-900 border border-neutral-800">
                   <button
-                    onClick={() => setViewMode('full_render')}
-                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-                      viewMode === 'full_render'
-                        ? 'bg-neutral-800 text-white font-bold shadow-sm'
-                        : 'text-neutral-400 hover:text-neutral-200'
+                    type="button"
+                    onClick={() => {
+                      setViewMode('full_render');
+                      setAssetEngine('original');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                      assetEngine === 'original' && viewMode === 'full_render'
+                        ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-400'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800/80'
                     }`}
                   >
-                    <Compass className="w-3.5 h-3.5 text-red-400" />
-                    <span>Full Battlefield Render</span>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>⭐ Original Westwood Assets</span>
+                    <span className="text-[10px] font-mono uppercase bg-emerald-950/90 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-400/40">
+                      24×24 Authentic
+                    </span>
                   </button>
+
                   <button
-                    onClick={() => setViewMode('embedded_preview')}
-                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                    type="button"
+                    onClick={() => {
+                      setViewMode('full_render');
+                      setAssetEngine('vector');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                      assetEngine === 'vector' && viewMode === 'full_render'
+                        ? 'bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-950/60 ring-2 ring-red-400'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800/80'
+                    }`}
+                  >
+                    <Cpu className="w-3.5 h-3.5 text-neutral-200" />
+                    <span>Tactical Vector</span>
+                    <span className="text-[10px] font-mono uppercase bg-red-950/90 text-red-300 px-1.5 py-0.2 rounded border border-red-400/40">
+                      Schematic
+                    </span>
+                  </button>
+                </div>
+
+                {/* Embedded preview button if map has one */}
+                {mapData?.hasEmbeddedPreview && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode(viewMode === 'embedded_preview' ? 'full_render' : 'embedded_preview')}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer ${
                       viewMode === 'embedded_preview'
-                        ? 'bg-neutral-800 text-white font-bold shadow-sm'
-                        : 'text-neutral-400 hover:text-neutral-200'
+                        ? 'bg-cyan-950/80 border-cyan-500 text-cyan-200 shadow-md'
+                        : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-cyan-300'
                     }`}
                   >
                     <Eye className="w-3.5 h-3.5 text-cyan-400" />
                     <span>Embedded [PreviewPack] ({mapData.embeddedPreview?.width}×{mapData.embeddedPreview?.height})</span>
                   </button>
-                </div>
-              ) : (
-                <div />
-              )}
-
-              {/* Asset Mode Indicator Badge */}
-              <div className="flex items-center gap-2 text-[11px] font-mono">
-                {assetEngine === 'original' ? (
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Authentic 24×24 Game Graphics Active</span>
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400">
-                    Tactical Vector Mode
-                  </span>
                 )}
               </div>
+
+              {/* Sub-bar for Original Assets: Scale & Layer Toggles */}
+              {viewMode === 'full_render' && assetEngine === 'original' && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-neutral-950/90 border border-neutral-800/80 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-neutral-400 uppercase font-semibold">Scale:</span>
+                    <div className="flex items-center gap-1 bg-neutral-900 p-0.5 rounded-lg border border-neutral-800">
+                      {[
+                        { label: 'Native 24px (100%)', scale: 1.0 },
+                        { label: 'Tactical 12px (50%)', scale: 0.5 },
+                        { label: 'Compact 6px (25%)', scale: 0.25 },
+                      ].map((item) => (
+                        <button
+                          key={item.scale}
+                          type="button"
+                          onClick={() => setOriginalScale(item.scale)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                            originalScale === item.scale
+                              ? 'bg-emerald-600 text-white font-bold'
+                              : 'text-neutral-400 hover:text-neutral-200'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-[11px] text-neutral-300">
+                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.onlyDrawVisible}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, onlyDrawVisible: e.target.checked }))
+                        }
+                        className="rounded border-neutral-700 text-emerald-500 focus:ring-0"
+                      />
+                      <span>Crop Bounds</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showWaypoints}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showWaypoints: e.target.checked }))
+                        }
+                        className="rounded border-neutral-700 text-emerald-500 focus:ring-0"
+                      />
+                      <span>Spawns</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showOre}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showOre: e.target.checked }))
+                        }
+                        className="rounded border-neutral-700 text-emerald-500 focus:ring-0"
+                      />
+                      <span>Ore & Gems</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showStructures}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showStructures: e.target.checked }))
+                        }
+                        className="rounded border-neutral-700 text-emerald-500 focus:ring-0"
+                      />
+                      <span>Buildings</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Asset Load Error Banner with Retry and Browse options */}
+              {assetLoadError && (
+                <div className="p-3.5 rounded-xl bg-amber-950/70 border border-amber-600/80 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fade-in">
+                  <div className="flex items-start gap-2.5 text-amber-200">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-amber-300">
+                        Could not load <code className="font-mono text-white">ra_data.pack</code> automatically
+                      </div>
+                      <p className="text-[11px] text-amber-200/80 mt-0.5">
+                        {assetLoadError}. You can retry loading or select <code className="font-mono text-amber-300">ra_data.pack</code> / <code className="font-mono text-amber-300">ra_data.zip</code> manually from your disk.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleRetryAssetLoad}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Retry</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => manualPackInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-amber-600/60 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <FolderArchive className="w-3.5 h-3.5" />
+                      <span>Browse .pack / .zip</span>
+                    </button>
+
+                    <input
+                      ref={manualPackInputRef}
+                      type="file"
+                      accept=".pack,.zip"
+                      className="hidden"
+                      onChange={handleManualPackUpload}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Canvas Container */}

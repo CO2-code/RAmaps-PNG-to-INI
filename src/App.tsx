@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, ShieldCheck, AlertTriangle, X, Check } from 'lucide-react';
+import { Zap, ShieldCheck, AlertTriangle, X, Check, Sparkles, Compass, MapPin } from 'lucide-react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
 import { ControlPanel } from './components/ControlPanel';
@@ -159,10 +159,50 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setIsMprModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-red-950/70 hover:bg-red-900/80 border border-red-600/70 text-red-200 hover:text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-red-950/50 transition-all cursor-pointer"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-950 via-neutral-900 to-emerald-950 hover:from-red-900 hover:to-emerald-900 border border-emerald-500/70 text-white text-xs font-bold flex items-center gap-2.5 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer group"
             >
-              <Zap className="w-4 h-4 text-red-400" />
-              <span>*.MPR → *.PNG Map Generator</span>
+              <Sparkles className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+              <div className="text-left">
+                <div className="text-[10px] font-mono text-emerald-300 uppercase tracking-wider font-semibold">1,780 Game Assets</div>
+                <div className="text-sm font-bold text-white">⭐ Original Assets Map Gen</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Featured Original Westwood Assets Map Generator Card */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-neutral-900 via-neutral-900/90 to-emerald-950/40 border border-neutral-800 hover:border-neutral-700 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600 to-emerald-500 p-0.5 shadow-lg shadow-emerald-950/40 shrink-0 flex items-center justify-center">
+              <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-amber-400" />
+              </div>
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-bold text-white tracking-wide">
+                  Original Westwood Assets Map Generator
+                </span>
+                <span className="text-[10px] font-mono uppercase bg-emerald-950/80 border border-emerald-600/60 text-emerald-300 font-bold px-2 py-0.5 rounded">
+                  Iran RAFullMapPreviewGenerator Port
+                </span>
+                <span className="text-[10px] font-mono text-neutral-400">
+                  Temperate · Snow · Winter · Interior
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400 mt-1 max-w-2xl">
+                Render full-resolution battlefield images directly from any <code className="text-amber-400 font-mono">.MPR</code> or <code className="text-amber-400 font-mono">.INI</code> map using authentic 24×24 terrain tiles, SHP sprites, gold ore, gems, and player spawns.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setIsMprModalOpen(true)}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-colors cursor-pointer"
+            >
+              <Compass className="w-4 h-4" />
+              <span>Launch Original Assets Map View</span>
             </button>
           </div>
         </div>

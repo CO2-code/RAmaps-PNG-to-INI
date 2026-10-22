@@ -181,10 +181,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           <button
             type="button"
             onClick={onOpenMprModal}
-            className="ml-auto px-2.5 py-1 rounded-lg bg-red-950/60 border border-red-800/60 hover:border-red-600 text-red-300 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
+            className="ml-auto px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-700/60 hover:border-emerald-500 text-emerald-300 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
-            <Compass className="w-3.5 h-3.5 text-red-400" />
-            <span>Generate PNG from *.MPR Map</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>⭐ Original Assets & *.MPR Map Gen</span>
           </button>
         )}
       </div>

@@ -295,22 +295,115 @@ class AssetLoader {
   private shpCache: Map<string, RaShp | null> = new Map();
   private paletteCache: Map<string, Palette | null> = new Map();
 
+  private lastError: string | null = null;
+
+  public hasPack(): boolean {
+    return this.isLoaded && this.files.size > 0;
+  }
+
+  public getLastError(): string | null {
+    return this.lastError;
+  }
+
+  public reset(): void {
+    this.isLoaded = false;
+    this.loadPromise = null;
+    this.lastError = null;
+    this.files.clear();
+    this.tilesetMap = null;
+    this.templateCache.clear();
+    this.shpCache.clear();
+    this.paletteCache.clear();
+  }
+
   /**
-   * Loads and extracts the single ra_data.pack archive into memory
+   * Manually load archive from ArrayBuffer (e.g. user dragged/selected ra_data.pack)
+   */
+  public loadPackFromArrayBuffer(arrayBuffer: ArrayBuffer): boolean {
+    try {
+      const unzipped = unzipSync(new Uint8Array(arrayBuffer));
+      let count = 0;
+      for (const [key, data] of Object.entries(unzipped)) {
+        const cleanKey = key.toLowerCase().replace(/\\/g, '/');
+        this.files.set(cleanKey, data);
+        count++;
+      }
+      if (count === 0) {
+        throw new Error('Archive contains 0 files');
+      }
+      this.isLoaded = true;
+      this.lastError = null;
+      this.tilesetMap = null;
+      this.templateCache.clear();
+      this.shpCache.clear();
+      this.paletteCache.clear();
+      return true;
+    } catch (err: any) {
+      this.lastError = `Failed to unpack archive: ${err?.message || err}`;
+      return false;
+    }
+  }
+
+  /**
+   * Loads and extracts the single ra_data.pack archive into memory.
+   * Resolves URLs with respect to GitHub Pages subpath (Vite base) and relative paths.
    */
   public async ensurePackLoaded(
     onProgress?: (loadedBytes: number, totalBytes: number) => void
   ): Promise<boolean> {
-    if (this.isLoaded) return true;
+    if (this.isLoaded && this.files.size > 0) return true;
     if (this.loadPromise) return this.loadPromise;
 
     this.loadPromise = (async () => {
       try {
-        let res = await fetch('/ra_data.pack');
-        if (!res.ok) {
-          res = await fetch('/ra_data.zip');
+        // Collect candidate URLs for GitHub Pages repository subpaths, root hosts, and dev
+        const candidateUrls: string[] = [];
+        const rawBase = (import.meta as any).env?.BASE_URL || './';
+        const base = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
+
+        candidateUrls.push(`${base}ra_data.pack`);
+        candidateUrls.push(`${base}ra_data.zip`);
+        candidateUrls.push('./ra_data.pack');
+        candidateUrls.push('./ra_data.zip');
+        candidateUrls.push('ra_data.pack');
+        candidateUrls.push('ra_data.zip');
+
+        if (typeof window !== 'undefined' && window.location) {
+          try {
+            const cleanHref = window.location.href.split('#')[0].split('?')[0];
+            const dirHref = cleanHref.endsWith('/') ? cleanHref : cleanHref.substring(0, cleanHref.lastIndexOf('/') + 1);
+            candidateUrls.push(`${dirHref}ra_data.pack`);
+            candidateUrls.push(`${dirHref}ra_data.zip`);
+          } catch {
+            // ignore
+          }
         }
-        if (!res.ok) throw new Error('Could not find ra_data.pack or ra_data.zip');
+
+        candidateUrls.push('/ra_data.pack');
+        candidateUrls.push('/ra_data.zip');
+
+        // Deduplicate
+        const uniqueUrls = Array.from(new Set(candidateUrls));
+        let res: Response | null = null;
+        let lastErrorMsg = '';
+
+        for (const url of uniqueUrls) {
+          try {
+            const r = await fetch(url);
+            if (r.ok && r.status === 200) {
+              res = r;
+              break;
+            } else {
+              lastErrorMsg = `HTTP ${r.status} (${url})`;
+            }
+          } catch (e: any) {
+            lastErrorMsg = `${e?.message || 'Network error'} (${url})`;
+          }
+        }
+
+        if (!res || !res.ok) {
+          throw new Error(`Could not find ra_data.pack or ra_data.zip. Last tried: ${lastErrorMsg}`);
+        }
 
         const contentLength = parseInt(res.headers.get('content-length') || '0', 10);
         let arrayBuffer: ArrayBuffer;
@@ -349,9 +442,12 @@ class AssetLoader {
         }
 
         this.isLoaded = true;
+        this.lastError = null;
         return true;
-      } catch (err) {
-        console.error('Failed to load ra_data.pack:', err);
+      } catch (err: any) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('Failed to load ra_data.pack:', msg);
+        this.lastError = msg;
         return false;
       } finally {
         this.loadPromise = null;
@@ -471,9 +567,32 @@ export async function preloadMapAssets(
   map: MprMapData,
   onProgress?: (loaded: number, total: number) => void
 ): Promise<void> {
-  await assetLoader.ensurePackLoaded(onProgress);
+  const ok = await assetLoader.ensurePackLoaded(onProgress);
+  if (!ok) {
+    const err = assetLoader.getLastError() || 'Failed to load ra_data.pack or ra_data.zip';
+    throw new Error(err);
+  }
   await assetLoader.getTilesetMap();
   await assetLoader.getPalette(map.theater);
+}
+
+export function isOriginalAssetsLoaded(): boolean {
+  return assetLoader.hasPack();
+}
+
+export function getOriginalAssetsError(): string | null {
+  return assetLoader.getLastError();
+}
+
+export function loadOriginalAssetsManually(buffer: ArrayBuffer): boolean {
+  return assetLoader.loadPackFromArrayBuffer(buffer);
+}
+
+export async function retryOriginalAssetsLoad(
+  onProgress?: (loaded: number, total: number) => void
+): Promise<boolean> {
+  assetLoader.reset();
+  return assetLoader.ensurePackLoaded(onProgress);
 }
 
 /**
