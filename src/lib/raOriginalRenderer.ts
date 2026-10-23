@@ -280,6 +280,41 @@ export const ORE_FRAMES: Record<string, number> = {
   gem01: 2,
   gem02: 2,
   gem03: 2,
+  gem04: 2,
+};
+
+/**
+ * Normalizes template names across Westwood naming conventions.
+ * E.g.:
+ *  'xtra001', 'XTRA01', 'XTRA1' -> 'xtra0001'
+ *  'wall001', 'WALL01', 'wall1' -> 'wall0001'
+ *  'lwal1' -> 'lwal0001'
+ *  'flor1' -> 'flor0001'
+ */
+export function normalizeTemplateName(name: string): string {
+  let s = name.trim().toLowerCase();
+  s = s.replace(/\.(tem|int|sno|des|shp)$/, '');
+  const m = s.match(/^([a-z]+)(\d+)$/);
+  if (m) {
+    const prefix = m[1];
+    const num = parseInt(m[2], 10);
+    if (['xtra', 'wall', 'lwal', 'flor', 'gflr', 'strp', 'gstr', 'arro'].includes(prefix)) {
+      return `${prefix}${num.toString().padStart(4, '0')}`;
+    }
+  }
+  return s;
+}
+
+export const WALL_OVERLAYS = new Set(['brik', 'sbag', 'cycl', 'barb', 'wood', 'fenc']);
+export const isWallOverlay = (name: string | null | undefined): boolean => {
+  if (!name) return false;
+  const n = normalizeTemplateName(name);
+  return (
+    WALL_OVERLAYS.has(n) ||
+    n.startsWith('xtra') ||
+    n.startsWith('wall') ||
+    n.startsWith('lwal')
+  );
 };
 
 /**
@@ -506,11 +541,11 @@ class AssetLoader {
     return pal;
   }
 
-  // Load Template from pack (.tem, .sno, etc.)
+  // Load Template from pack (.tem, .sno, .int, etc.)
   public async getTemplate(theater: string, templateName: string): Promise<RaTemplate | null> {
-    const name = templateName.toLowerCase();
+    const norm = normalizeTemplateName(templateName);
     const t = theater.toLowerCase();
-    const key = `${t}/${name}`;
+    const key = `${t}/${norm}`;
     if (this.templateCache.has(key)) return this.templateCache.get(key) || null;
     await this.ensurePackLoaded();
 
@@ -519,10 +554,36 @@ class AssetLoader {
     else if (t === 'desert') ext = '.des';
     else if (t === 'interior') ext = '.int';
 
-    let buf = this.files.get(`${t}/${name}${ext}`);
+    // 1. Try theater specific path
+    let buf = this.files.get(`${t}/${norm}${ext}`);
+
+    // 2. Interior check for interior templates or interior theater
+    if (
+      !buf &&
+      (t === 'interior' ||
+        norm.startsWith('xtra') ||
+        norm.startsWith('wall') ||
+        norm.startsWith('lwal') ||
+        norm.startsWith('flor') ||
+        norm.startsWith('gflr') ||
+        norm.startsWith('strp') ||
+        norm.startsWith('gstr') ||
+        norm.startsWith('arro'))
+    ) {
+      buf = this.files.get(`interior/${norm}.int`);
+    }
+
+    // 3. Fallback to temperate if theater doesn't have it
     if (!buf) {
-      // Fallback to temperate if theater doesn't have it
-      buf = this.files.get(`temperate/${name}.tem`);
+      buf = this.files.get(`temperate/${norm}.tem`);
+    }
+
+    // 4. Fallback to any matching file across all theaters
+    if (!buf) {
+      buf =
+        this.files.get(`interior/${norm}.int`) ||
+        this.files.get(`snow/${norm}.sno`) ||
+        this.files.get(`desert/${norm}.des`);
     }
 
     if (!buf) {
@@ -537,7 +598,7 @@ class AssetLoader {
 
   // Load SHP from pack
   public async getShp(theater: string, shpName: string): Promise<RaShp | null> {
-    const name = shpName.toLowerCase();
+    const name = normalizeTemplateName(shpName);
     const key = name;
     if (this.shpCache.has(key)) return this.shpCache.get(key) || null;
     await this.ensurePackLoaded();
@@ -620,8 +681,13 @@ export async function preloadMapAssets(
   await assetLoader.getTilesetMap();
   await assetLoader.getPalette(map.theater);
 
-  // Pre-load common overlays (gold01..04, gem01..04)
-  for (const ov of ['gold01', 'gold02', 'gold03', 'gold04', 'gem01', 'gem02', 'gem03', 'gem04']) {
+  // Pre-load common overlays (gold01..04, gem01..04, walls)
+  const commonOverlays = [
+    'gold01', 'gold02', 'gold03', 'gold04',
+    'gem01', 'gem02', 'gem03', 'gem04',
+    'brik', 'sbag', 'cycl', 'barb', 'wood', 'fenc'
+  ];
+  for (const ov of commonOverlays) {
     await assetLoader.getOverlay(map.theater, ov);
   }
 }
@@ -655,6 +721,7 @@ export async function renderMprOriginalAssets(
     showWaypoints: boolean;
     showOre: boolean;
     showStructures: boolean;
+    showWalls?: boolean;
     scaleMultiplier?: number; // e.g. 1.0 (24px/cell), 0.5 (12px), 0.25 (6px)
   },
   targetCanvas: HTMLCanvasElement
@@ -758,34 +825,41 @@ export async function renderMprOriginalAssets(
     }
   }
 
-  // 2. Draw Overlays (Gold Ore, Gems, Crates, Fences using authentic Westwood SHP assets)
-  if (options.showOre && (map.hasOverlayPack || map.goldCellCount > 0 || map.gemCellCount > 0)) {
-    // Cache rendered overlay canvases for fast blitting (each 24x24 tile is rendered once and drawn with drawImage)
+  // 2. Draw Overlays (Gold Ore, Gems, Crates, and Autotiled Walls using authentic Westwood SHP assets)
+  const drawWalls = options.showWalls !== false;
+  const drawOre = options.showOre;
+
+  if (map.hasOverlayPack || map.goldCellCount > 0 || map.gemCellCount > 0 || (map.wallCellCount && map.wallCellCount > 0)) {
+    // Cache rendered overlay canvases for fast blitting
     const overlayCanvasCache = new Map<string, HTMLCanvasElement | null>();
 
-    const getOverlayCanvas = async (ovName: string): Promise<HTMLCanvasElement | null> => {
-      const normName = ovName.toLowerCase();
-      if (overlayCanvasCache.has(normName)) {
-        return overlayCanvasCache.get(normName) || null;
+    const getOverlayCanvas = async (ovName: string, frameNumber?: number): Promise<HTMLCanvasElement | null> => {
+      const normName = normalizeTemplateName(ovName);
+      const cacheKey = frameNumber !== undefined ? `${normName}_${frameNumber}` : normName;
+      if (overlayCanvasCache.has(cacheKey)) {
+        return overlayCanvasCache.get(cacheKey) || null;
       }
 
       const shp = await assetLoader.getOverlay(map.theater, normName);
       if (!shp || shp.frames.length === 0) {
-        overlayCanvasCache.set(normName, null);
+        overlayCanvasCache.set(cacheKey, null);
         return null;
       }
 
-      // Pick richest frame for ore/gems (frame 11 for gold, frame 2 for gems) or frame 0 for structures/crates
-      const preferredFrame = ORE_FRAMES[normName] ?? (shp.frames.length - 1);
-      const frameIdx = Math.min(shp.frames.length - 1, Math.max(0, preferredFrame));
-      const frame = shp.frames[frameIdx] || shp.frames[0];
+      let frameIdx = 0;
+      if (frameNumber !== undefined) {
+        frameIdx = Math.min(shp.frames.length - 1, Math.max(0, frameNumber));
+      } else if (ORE_FRAMES[normName] !== undefined) {
+        frameIdx = Math.min(shp.frames.length - 1, Math.max(0, ORE_FRAMES[normName]));
+      }
 
+      const frame = shp.frames[frameIdx] || shp.frames[0];
       const c = document.createElement('canvas');
       c.width = frame.width;
       c.height = frame.height;
       const cCtx = c.getContext('2d');
       if (!cCtx) {
-        overlayCanvasCache.set(normName, null);
+        overlayCanvasCache.set(cacheKey, null);
         return null;
       }
 
@@ -802,18 +876,17 @@ export async function renderMprOriginalAssets(
         }
       }
       cCtx.putImageData(imgData, 0, 0);
-      overlayCanvasCache.set(normName, c);
+      overlayCanvasCache.set(cacheKey, c);
       return c;
     };
 
-    // Pre-cache all distinct overlay types present on this map
-    const distinctOverlays = new Set<string>();
-    for (const cell of map.cells) {
-      if (cell?.overlay) distinctOverlays.add(cell.overlay.toLowerCase());
-    }
-    for (const ovName of distinctOverlays) {
-      await getOverlayCanvas(ovName);
-    }
+    const isConnectedWall = (gx: number, gy: number, myWallType: string): boolean => {
+      if (gx < 0 || gx >= 128 || gy < 0 || gy >= 128) return false;
+      const neighbor = map.cells[gy * 128 + gx];
+      if (!neighbor?.overlay) return false;
+      const nOv = normalizeTemplateName(neighbor.overlay);
+      return nOv === myWallType || (isWallOverlay(nOv) && isWallOverlay(myWallType));
+    };
 
     // Draw all overlays onto nativeCanvas using drawImage (which seamlessly blends with the ground tile!)
     for (let y = 0; y < heightCells; y++) {
@@ -824,46 +897,141 @@ export async function renderMprOriginalAssets(
         const cell = map.cells[cellIdx];
         if (!cell?.overlay || (!options.onlyDrawVisible && cell.isOutOfBounds)) continue;
 
-        const ovCanvas = overlayCanvasCache.get(cell.overlay.toLowerCase());
+        const ovRaw = cell.overlay.toLowerCase();
         const targetPx = x * tileSize;
         const targetPy = y * tileSize;
 
-        if (ovCanvas) {
-          ctx.drawImage(ovCanvas, targetPx, targetPy);
-        } else if (cell.overlay.toLowerCase().startsWith('gold')) {
-          // Visual fallback: glowing gold ore crystals if pack overlay not found
-          ctx.fillStyle = '#ca8a04';
-          ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
-          ctx.fillStyle = '#fef08a';
-          ctx.fillRect(targetPx + 4, targetPy + 4, 6, 6);
-        } else if (cell.overlay.toLowerCase().startsWith('gem')) {
-          // Visual fallback: ruby gem crystals if pack overlay not found
-          ctx.fillStyle = '#dc2626';
-          ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
-          ctx.fillStyle = '#fca5a5';
-          ctx.fillRect(targetPx + 4, targetPy + 4, 6, 6);
+        if (isWallOverlay(ovRaw)) {
+          if (!drawWalls) continue;
+          const normWall = normalizeTemplateName(ovRaw);
+
+          if (normWall.startsWith('xtra') || normWall.startsWith('wall') || normWall.startsWith('lwal')) {
+            // Interior wall/extra template overlay (e.g. XTRA001, WALL0001)
+            const wallTmpl = await assetLoader.getTemplate(map.theater, normWall);
+            const wallTile = wallTmpl ? wallTmpl.tiles.find((t) => t !== null) || wallTmpl.tiles[0] : null;
+            if (wallTile) {
+              drawIndexedTile(wallTile, targetPx, targetPy, basePalette);
+            } else {
+              ctx.fillStyle = '#64748b';
+              ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
+            }
+          } else {
+            // Calculate 4-way adjacent connection mask (North=1, East=2, South=4, West=8)
+            let mask = 0;
+            if (isConnectedWall(gridX, gridY - 1, normWall)) mask |= 1; // North
+            if (isConnectedWall(gridX + 1, gridY, normWall)) mask |= 2; // East
+            if (isConnectedWall(gridX, gridY + 1, normWall)) mask |= 4; // South
+            if (isConnectedWall(gridX - 1, gridY, normWall)) mask |= 8; // West
+
+            const wallCanvas = await getOverlayCanvas(normWall, mask);
+            if (wallCanvas) {
+              ctx.drawImage(wallCanvas, targetPx, targetPy);
+            } else {
+              // Visual fallback
+              const wallColor = normWall === 'brik' ? '#94a3b8' : normWall === 'sbag' ? '#d97706' : '#64748b';
+              ctx.fillStyle = wallColor;
+              ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
+            }
+          }
+        } else if (ovRaw.startsWith('gold') || ovRaw.startsWith('gem')) {
+          if (!drawOre) continue;
+          const ovCanvas = await getOverlayCanvas(ovRaw);
+          if (ovCanvas) {
+            ctx.drawImage(ovCanvas, targetPx, targetPy);
+          } else if (ovRaw.startsWith('gold')) {
+            ctx.fillStyle = '#ca8a04';
+            ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
+            ctx.fillStyle = '#fef08a';
+            ctx.fillRect(targetPx + 4, targetPy + 4, 6, 6);
+          } else if (ovRaw.startsWith('gem')) {
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
+            ctx.fillStyle = '#fca5a5';
+            ctx.fillRect(targetPx + 4, targetPy + 4, 6, 6);
+          }
+        } else if (ovRaw.includes('crate') && (drawOre || options.showStructures)) {
+          const crateCanvas = await getOverlayCanvas(ovRaw, 0);
+          if (crateCanvas) {
+            ctx.drawImage(crateCanvas, targetPx, targetPy);
+          }
         }
       }
     }
   }
 
-  // 3. Draw Terrain (Trees & Rocks using original .shp sprites with caching)
+  // 3. Draw Terrain (Trees & Rocks using original .shp sprites with caching, and XTRA/WALL props)
   const terrainCanvasCache = new Map<string, HTMLCanvasElement | null>();
   const getTerrainCanvas = async (tName: string): Promise<HTMLCanvasElement | null> => {
-    const key = tName.toLowerCase();
-    if (terrainCanvasCache.has(key)) return terrainCanvasCache.get(key) || null;
-    const shp = await assetLoader.getShp(map.theater, key);
+    const normKey = normalizeTemplateName(tName);
+    if (terrainCanvasCache.has(normKey)) return terrainCanvasCache.get(normKey) || null;
+
+    // 1. Check if it's an interior wall/extra prop (e.g. XTRA0001, WALL0001, LWAL0001)
+    if (normKey.startsWith('xtra') || normKey.startsWith('wall') || normKey.startsWith('lwal')) {
+      const tmpl = await assetLoader.getTemplate(map.theater, normKey);
+      const wallTile = tmpl ? tmpl.tiles.find((t) => t !== null) || tmpl.tiles[0] : null;
+      if (wallTile) {
+        const c = document.createElement('canvas');
+        c.width = tileSize;
+        c.height = tileSize;
+        const cCtx = c.getContext('2d');
+        if (cCtx) {
+          const imgD = cCtx.createImageData(tileSize, tileSize);
+          for (let p = 0; p < wallTile.length; p++) {
+            const col = basePalette[wallTile[p]];
+            const oIdx = p * 4;
+            if (col && col.a > 0) {
+              imgD.data[oIdx] = col.r;
+              imgD.data[oIdx + 1] = col.g;
+              imgD.data[oIdx + 2] = col.b;
+              imgD.data[oIdx + 3] = col.a;
+            }
+          }
+          cCtx.putImageData(imgD, 0, 0);
+          terrainCanvasCache.set(normKey, c);
+          return c;
+        }
+      }
+    }
+
+    // 2. Try loading as SHP (Trees, Rocks, etc.)
+    const shp = await assetLoader.getShp(map.theater, normKey);
     if (!shp || shp.frames.length === 0) {
-      terrainCanvasCache.set(key, null);
+      // Fallback: check if it matches any template
+      const fallbackTmpl = await assetLoader.getTemplate(map.theater, normKey);
+      const fallbackTile = fallbackTmpl ? fallbackTmpl.tiles.find((t) => t !== null) || fallbackTmpl.tiles[0] : null;
+      if (fallbackTile) {
+        const c = document.createElement('canvas');
+        c.width = tileSize;
+        c.height = tileSize;
+        const cCtx = c.getContext('2d');
+        if (cCtx) {
+          const imgD = cCtx.createImageData(tileSize, tileSize);
+          for (let p = 0; p < fallbackTile.length; p++) {
+            const col = basePalette[fallbackTile[p]];
+            const oIdx = p * 4;
+            if (col && col.a > 0) {
+              imgD.data[oIdx] = col.r;
+              imgD.data[oIdx + 1] = col.g;
+              imgD.data[oIdx + 2] = col.b;
+              imgD.data[oIdx + 3] = col.a;
+            }
+          }
+          cCtx.putImageData(imgD, 0, 0);
+          terrainCanvasCache.set(normKey, c);
+          return c;
+        }
+      }
+      terrainCanvasCache.set(normKey, null);
       return null;
     }
+
     const frame = shp.frames[0];
     const c = document.createElement('canvas');
     c.width = frame.width;
     c.height = frame.height;
     const cCtx = c.getContext('2d');
     if (!cCtx) {
-      terrainCanvasCache.set(key, null);
+      terrainCanvasCache.set(normKey, null);
       return null;
     }
     const imgD = cCtx.createImageData(frame.width, frame.height);
@@ -879,14 +1047,14 @@ export async function renderMprOriginalAssets(
       }
     }
     cCtx.putImageData(imgD, 0, 0);
-    terrainCanvasCache.set(key, c);
+    terrainCanvasCache.set(normKey, c);
     return c;
   };
 
   // Pre-cache distinct terrain sprites
   const distinctTerrain = new Set<string>();
   for (const cell of map.cells) {
-    if (cell?.terrain) distinctTerrain.add(cell.terrain.toLowerCase());
+    if (cell?.terrain) distinctTerrain.add(normalizeTemplateName(cell.terrain));
   }
   for (const tName of distinctTerrain) {
     await getTerrainCanvas(tName);
@@ -900,9 +1068,13 @@ export async function renderMprOriginalAssets(
       const cell = map.cells[cellIdx];
       if (!cell?.terrain || (!options.onlyDrawVisible && cell.isOutOfBounds)) continue;
 
+      const normT = normalizeTemplateName(cell.terrain);
+      const isWallTerrain = normT.startsWith('xtra') || normT.startsWith('wall') || normT.startsWith('lwal');
+      if (isWallTerrain && !drawWalls) continue;
+
       const targetPx = x * tileSize;
       const targetPy = y * tileSize;
-      const shpCanvas = terrainCanvasCache.get(cell.terrain.toLowerCase());
+      const shpCanvas = terrainCanvasCache.get(normT);
       if (shpCanvas) {
         ctx.drawImage(shpCanvas, targetPx, targetPy);
       }

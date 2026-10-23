@@ -80,6 +80,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     showWaypoints: true,
     showOre: true,
     showStructures: true,
+    showWalls: true,
     showGrid: false,
     theaterOverride: undefined,
   });
@@ -159,6 +160,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                 showWaypoints: renderOptions.showWaypoints,
                 showOre: renderOptions.showOre,
                 showStructures: renderOptions.showStructures,
+                showWalls: renderOptions.showWalls !== false,
                 scaleMultiplier: originalScale,
               },
               canvasRef.current
@@ -209,6 +211,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
               showWaypoints: renderOptions.showWaypoints,
               showOre: renderOptions.showOre,
               showStructures: renderOptions.showStructures,
+              showWalls: renderOptions.showWalls !== false,
               scaleMultiplier: originalScale,
             },
             canvasRef.current
@@ -240,6 +243,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
             showWaypoints: renderOptions.showWaypoints,
             showOre: renderOptions.showOre,
             showStructures: renderOptions.showStructures,
+            showWalls: renderOptions.showWalls !== false,
             scaleMultiplier: originalScale,
           },
           canvasRef.current
@@ -293,6 +297,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
             showWaypoints: renderOptions.showWaypoints,
             showOre: renderOptions.showOre,
             showStructures: renderOptions.showStructures,
+            showWalls: renderOptions.showWalls !== false,
             scaleMultiplier: originalScale * scaleMultiplier,
           },
           exportCanvas
@@ -581,6 +586,18 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                       />
                       <span>Buildings</span>
                     </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showWalls !== false}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showWalls: e.target.checked }))
+                        }
+                        className="rounded border-neutral-700 text-emerald-500 focus:ring-0"
+                      />
+                      <span>Walls</span>
+                    </label>
                   </div>
                 </div>
               )}
@@ -760,6 +777,15 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                       {mapData.gemCellCount} Cells
                     </div>
                   </div>
+
+                  {mapData.wallCellCount > 0 && (
+                    <div className="p-2 rounded-lg bg-neutral-900/60 border border-neutral-800/60 col-span-2 sm:col-span-1">
+                      <div className="text-[10px] text-neutral-500 uppercase">Defensive Walls</div>
+                      <div className="text-cyan-400 font-bold">
+                        {mapData.wallCellCount} Cells
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -926,6 +952,24 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                     checked={renderOptions.showStructures}
                     onChange={(e) =>
                       setRenderOptions((prev) => ({ ...prev, showStructures: e.target.checked }))
+                    }
+                    className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
+                  />
+                </label>
+
+                {/* Show Walls & Fences Toggle */}
+                <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
+                  <div>
+                    <div className="text-xs font-bold text-white">Defensive Walls & Fences</div>
+                    <div className="text-[10px] text-neutral-400 font-mono">
+                      Autotiled walls (BRIK, SBAG), fences, and interior bunker walls (XTRA, WALL)
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={renderOptions.showWalls !== false}
+                    onChange={(e) =>
+                      setRenderOptions((prev) => ({ ...prev, showWalls: e.target.checked }))
                     }
                     className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
                   />

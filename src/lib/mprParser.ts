@@ -61,6 +61,7 @@ export interface MprMapData {
   };
   goldCellCount: number;
   gemCellCount: number;
+  wallCellCount: number;
   playerSpawnCount: number;
 }
 
@@ -70,6 +71,7 @@ export interface MprRenderOptions {
   showWaypoints: boolean; // Draw numbered spawn badges (1 to 8)
   showOre: boolean; // Draw shimmering gold ore & ruby gems
   showStructures: boolean; // Draw team-colored structure markers
+  showWalls?: boolean; // Draw concrete walls, sandbags, fences (BRIK, SBAG, CYCL, BARB, WOOD, FENC)
   showGrid: boolean; // Draw faint tactical grid
   theaterOverride?: 'temperate' | 'snow' | 'winter' | 'desert' | 'interior';
 }
@@ -251,6 +253,17 @@ export function nameFromOverlayByte(b: number): string | null {
   }
 }
 
+export function isWallName(ov: string | null | undefined): boolean {
+  if (!ov) return false;
+  const u = ov.trim().toUpperCase();
+  return (
+    ['SBAG', 'CYCL', 'BRIK', 'BARB', 'WOOD', 'FENC'].includes(u) ||
+    u.startsWith('XTRA') ||
+    u.startsWith('WALL') ||
+    u.startsWith('LWAL')
+  );
+}
+
 /**
  * Template classifier based on Tilesets.ini in Iran's RAFullMapPreviewGenerator
  */
@@ -339,8 +352,12 @@ export function classifyTemplate(templateId: number): TerrainCategory {
     return 'interior_floor';
   }
 
-  // Interior Walls: wall (329..377), LWAL (291..317)
-  if ((templateId >= 329 && templateId <= 377) || (templateId >= 291 && templateId <= 317)) {
+  // Interior Walls: wall (329..377), LWAL (291..317), xtra (384..399)
+  if (
+    (templateId >= 329 && templateId <= 377) ||
+    (templateId >= 291 && templateId <= 317) ||
+    (templateId >= 384 && templateId <= 399)
+  ) {
     return 'interior_wall';
   }
 
@@ -413,6 +430,10 @@ export function parseMprMap(fileContent: string): MprMapData {
     };
   }
 
+  let goldCellCount = 0;
+  let gemCellCount = 0;
+  let wallCellCount = 0;
+
   // 4. Unpack MapPack
   const mapPackBytes = unpackPackedSection(fileContent, 'MapPack');
   const hasMapPack = mapPackBytes !== null && mapPackBytes.length >= 49152;
@@ -421,7 +442,15 @@ export function parseMprMap(fileContent: string): MprMapData {
     for (let i = 0; i < 16384; i++) {
       const lo = mapPackBytes[i * 2];
       const hi = mapPackBytes[i * 2 + 1];
-      cells[i].template = lo | (hi << 8);
+      const tmplId = lo | (hi << 8);
+      cells[i].template = tmplId;
+      if (
+        (tmplId >= 329 && tmplId <= 377) ||
+        (tmplId >= 291 && tmplId <= 317) ||
+        (tmplId >= 384 && tmplId <= 399)
+      ) {
+        wallCellCount++;
+      }
     }
     // Next 16384 bytes = Tile indices
     const tileOffset = 32768;
@@ -432,8 +461,6 @@ export function parseMprMap(fileContent: string): MprMapData {
 
   // 5. Unpack OverlayPack & [Overlay]
   const overlayPackBytes = unpackPackedSection(fileContent, 'OverlayPack');
-  let goldCellCount = 0;
-  let gemCellCount = 0;
 
   if (overlayPackBytes && overlayPackBytes.length >= 16384) {
     for (let i = 0; i < 16384; i++) {
@@ -442,7 +469,8 @@ export function parseMprMap(fileContent: string): MprMapData {
       if (ov) {
         cells[i].overlay = ov;
         if (ov.startsWith('GOLD')) goldCellCount++;
-        if (ov.startsWith('GEM')) gemCellCount++;
+        else if (ov.startsWith('GEM')) gemCellCount++;
+        else if (isWallName(ov)) wallCellCount++;
       }
     }
   }
@@ -456,12 +484,13 @@ export function parseMprMap(fileContent: string): MprMapData {
       if (cellIdx >= 0 && cellIdx < 16384 && ov) {
         cells[cellIdx].overlay = ov;
         if (ov.startsWith('GOLD')) goldCellCount++;
-        if (ov.startsWith('GEM')) gemCellCount++;
+        else if (ov.startsWith('GEM')) gemCellCount++;
+        else if (isWallName(ov)) wallCellCount++;
       }
     }
   }
 
-  const hasOverlayPack = (overlayPackBytes !== null && overlayPackBytes.length >= 16384) || (goldCellCount > 0 || gemCellCount > 0);
+  const hasOverlayPack = (overlayPackBytes !== null && overlayPackBytes.length >= 16384) || (goldCellCount > 0 || gemCellCount > 0 || wallCellCount > 0);
 
   // 6. Parse [TERRAIN]
   for (const line of getSectionLines('Terrain')) {
@@ -471,6 +500,9 @@ export function parseMprMap(fileContent: string): MprMapData {
       const terr = line.substring(idx + 1).trim();
       if (cellIdx >= 0 && cellIdx < 16384) {
         cells[cellIdx].terrain = terr;
+        if (isWallName(terr)) {
+          wallCellCount++;
+        }
       }
     }
   }
@@ -598,6 +630,7 @@ export function parseMprMap(fileContent: string): MprMapData {
     embeddedPreview,
     goldCellCount,
     gemCellCount,
+    wallCellCount,
     playerSpawnCount,
   };
 }
@@ -804,19 +837,26 @@ export function renderMprToCanvas(
 
       ctx.fillRect(px, py, cSize, cSize);
 
-      // Subtle relief for cliffs & shores
+      // Subtle relief for cliffs, shores, and interior walls
       if (cat === 'cliff' || cat === 'water_cliff') {
         ctx.fillStyle = pal.cliffTop;
         ctx.fillRect(px, py, cSize, Math.max(1, Math.floor(cSize * 0.3)));
       } else if (cat === 'shore') {
         ctx.fillStyle = pal.water;
         ctx.fillRect(px + Math.floor(cSize * 0.6), py + Math.floor(cSize * 0.6), Math.ceil(cSize * 0.4), Math.ceil(cSize * 0.4));
+      } else if (cat === 'interior_wall') {
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillRect(px, py, cSize, Math.max(1, Math.floor(cSize * 0.22)));
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(px, py + cSize - Math.max(1, Math.floor(cSize * 0.22)), cSize, Math.max(1, Math.floor(cSize * 0.22)));
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(px + 1, py + 1, Math.max(1, Math.floor(cSize * 0.15)), Math.max(1, Math.floor(cSize * 0.15)));
       }
     }
   }
 
-  // 2. Draw Overlays (Gold Ore & Gems)
-  if (options.showOre && map.hasOverlayPack) {
+  // 2. Draw Overlays (Gold Ore, Gems & Walls)
+  if (map.hasOverlayPack) {
     for (let y = 0; y < heightCells; y++) {
       for (let x = 0; x < widthCells; x++) {
         const gridX = startX + x;
@@ -830,23 +870,32 @@ export function renderMprToCanvas(
         const px = x * cSize;
         const py = y * cSize;
 
-        if (ov.startsWith('GOLD')) {
+        const isWall = isWallName(ov);
+
+        if (isWall) {
+          if (options.showWalls === false) continue;
+          // Walls (Concrete, Sandbags, Cyclone, Fences, XTRA/WALL)
+          const u = ov.toUpperCase();
+          const wallColor = u === 'BRIK' ? '#94a3b8' : u === 'SBAG' ? '#d97706' : u === 'WOOD' ? '#854d0e' : '#64748b';
+          ctx.fillStyle = wallColor;
+          ctx.fillRect(px + Math.floor(cSize * 0.15), py + Math.floor(cSize * 0.15), Math.max(1, cSize * 0.7), Math.max(1, cSize * 0.7));
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + Math.floor(cSize * 0.15), py + Math.floor(cSize * 0.15), Math.max(1, cSize * 0.7), Math.max(1, cSize * 0.7));
+        } else if (ov.startsWith('GOLD') && options.showOre) {
           // Shimmering Gold Ore crystals
           const intensity = parseInt(ov.substring(4), 10) || 1;
           ctx.fillStyle = intensity > 2 ? '#facc15' : '#eab308';
           ctx.fillRect(px + 1, py + 1, cSize - 2, cSize - 2);
           ctx.fillStyle = '#fef08a';
           ctx.fillRect(px + 2, py + 2, Math.max(1, cSize / 3), Math.max(1, cSize / 3));
-        } else if (ov.startsWith('GEM')) {
+        } else if (ov.startsWith('GEM') && options.showOre) {
           // Glowing Ruby Gem crystals
           ctx.fillStyle = '#dc2626';
           ctx.fillRect(px + 1, py + 1, cSize - 2, cSize - 2);
           ctx.fillStyle = '#fca5a5';
           ctx.fillRect(px + 2, py + 2, Math.max(1, cSize / 3), Math.max(1, cSize / 3));
-        } else if (['SBAG', 'CYCL', 'BRIK', 'BARB', 'WOOD', 'FENC'].includes(ov)) {
-          ctx.fillStyle = '#94a3b8';
-          ctx.fillRect(px + Math.floor(cSize * 0.25), py + Math.floor(cSize * 0.25), Math.max(1, cSize * 0.5), Math.max(1, cSize * 0.5));
-        } else if (ov.includes('CRATE')) {
+        } else if (ov.includes('CRATE') && (options.showOre || options.showStructures)) {
           ctx.fillStyle = '#f59e0b';
           ctx.fillRect(px + 1, py + 1, cSize - 2, cSize - 2);
         }
@@ -881,6 +930,16 @@ export function renderMprToCanvas(
         ctx.fillRect(px + 1, py + 1, cSize - 2, cSize - 2);
         ctx.fillStyle = '#9ca3af';
         ctx.fillRect(px + 2, py + 2, Math.max(1, cSize / 3), Math.max(1, cSize / 3));
+      } else if (t.startsWith('XTRA') || t.startsWith('WALL') || t.startsWith('LWAL')) {
+        // Interior wall / extra prop (e.g. XTRA001, WALL0001)
+        if (options.showWalls !== false) {
+          ctx.fillStyle = '#475569';
+          ctx.fillRect(px, py, cSize, cSize);
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillRect(px, py, cSize, Math.max(1, Math.floor(cSize * 0.22)));
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(px, py + cSize - Math.max(1, Math.floor(cSize * 0.22)), cSize, Math.max(1, Math.floor(cSize * 0.22)));
+        }
       }
     }
   }
