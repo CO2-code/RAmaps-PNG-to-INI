@@ -430,21 +430,38 @@ export function parseMprMap(fileContent: string): MprMapData {
     }
   }
 
-  // 5. Unpack OverlayPack
+  // 5. Unpack OverlayPack & [Overlay]
   const overlayPackBytes = unpackPackedSection(fileContent, 'OverlayPack');
-  const hasOverlayPack = overlayPackBytes !== null && overlayPackBytes.length >= 16384;
   let goldCellCount = 0;
   let gemCellCount = 0;
 
-  if (hasOverlayPack && overlayPackBytes) {
+  if (overlayPackBytes && overlayPackBytes.length >= 16384) {
     for (let i = 0; i < 16384; i++) {
       const b = overlayPackBytes[i];
       const ov = nameFromOverlayByte(b);
-      cells[i].overlay = ov;
-      if (ov?.startsWith('GOLD')) goldCellCount++;
-      if (ov?.startsWith('GEM')) gemCellCount++;
+      if (ov) {
+        cells[i].overlay = ov;
+        if (ov.startsWith('GOLD')) goldCellCount++;
+        if (ov.startsWith('GEM')) gemCellCount++;
+      }
     }
   }
+
+  // Also parse text-based [Overlay] section if present in map
+  for (const line of getSectionLines('Overlay')) {
+    const idx = line.indexOf('=');
+    if (idx !== -1) {
+      const cellIdx = parseInt(line.substring(0, idx).trim(), 10);
+      const ov = line.substring(idx + 1).trim().toUpperCase();
+      if (cellIdx >= 0 && cellIdx < 16384 && ov) {
+        cells[cellIdx].overlay = ov;
+        if (ov.startsWith('GOLD')) goldCellCount++;
+        if (ov.startsWith('GEM')) gemCellCount++;
+      }
+    }
+  }
+
+  const hasOverlayPack = (overlayPackBytes !== null && overlayPackBytes.length >= 16384) || (goldCellCount > 0 || gemCellCount > 0);
 
   // 6. Parse [TERRAIN]
   for (const line of getSectionLines('Terrain')) {

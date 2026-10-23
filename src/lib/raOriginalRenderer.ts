@@ -556,6 +556,51 @@ class AssetLoader {
     this.shpCache.set(key, parsed);
     return parsed;
   }
+
+  // Load Overlay SHP from pack (gold ore, gems, sandbags, crates, fences)
+  public async getOverlay(theater: string, overlayName: string): Promise<RaShp | null> {
+    const name = overlayName.toLowerCase();
+    const t = theater.toLowerCase();
+    const key = `overlay:${t}/${name}`;
+    if (this.shpCache.has(key)) return this.shpCache.get(key) || null;
+    await this.ensurePackLoaded();
+
+    let ext = '.tem';
+    if (t === 'snow') ext = '.sno';
+    else if (t === 'winter') ext = '.tem';
+    else if (t === 'desert') ext = '.des';
+    else if (t === 'interior') ext = '.int';
+
+    // 1. Check theater-specific overlay file (e.g. temperate/gold01.tem, snow/gold01.sno, desert/gold01.des)
+    let buf = this.files.get(`${t}/${name}${ext}`);
+    // 2. Temperate fallback
+    if (!buf) {
+      buf = this.files.get(`temperate/${name}.tem`);
+    }
+    // 3. General SHP (e.g. general/sbag.shp, general/brik.shp, general/wcrate.shp)
+    if (!buf) {
+      buf = this.files.get(`general/${name}.shp`);
+    }
+    // 4. Theater SHP fallback
+    if (!buf) {
+      buf = this.files.get(`${t}/${name}.shp`);
+    }
+
+    if (!buf) {
+      this.shpCache.set(key, null);
+      return null;
+    }
+
+    try {
+      const parsed = parseShp(buf);
+      this.shpCache.set(key, parsed);
+      return parsed;
+    } catch (e) {
+      console.warn(`Failed to parse overlay ${overlayName} as SHP:`, e);
+      this.shpCache.set(key, null);
+      return null;
+    }
+  }
 }
 
 export const assetLoader = new AssetLoader();
@@ -574,6 +619,11 @@ export async function preloadMapAssets(
   }
   await assetLoader.getTilesetMap();
   await assetLoader.getPalette(map.theater);
+
+  // Pre-load common overlays (gold01..04, gem01..04)
+  for (const ov of ['gold01', 'gold02', 'gold03', 'gold04', 'gem01', 'gem02', 'gem03', 'gem04']) {
+    await assetLoader.getOverlay(map.theater, ov);
+  }
 }
 
 export function isOriginalAssetsLoaded(): boolean {
@@ -708,8 +758,64 @@ export async function renderMprOriginalAssets(
     }
   }
 
-  // 2. Draw Overlays (Gold Ore & Gems using original .tem assets)
-  if (options.showOre && map.hasOverlayPack) {
+  // 2. Draw Overlays (Gold Ore, Gems, Crates, Fences using authentic Westwood SHP assets)
+  if (options.showOre && (map.hasOverlayPack || map.goldCellCount > 0 || map.gemCellCount > 0)) {
+    // Cache rendered overlay canvases for fast blitting (each 24x24 tile is rendered once and drawn with drawImage)
+    const overlayCanvasCache = new Map<string, HTMLCanvasElement | null>();
+
+    const getOverlayCanvas = async (ovName: string): Promise<HTMLCanvasElement | null> => {
+      const normName = ovName.toLowerCase();
+      if (overlayCanvasCache.has(normName)) {
+        return overlayCanvasCache.get(normName) || null;
+      }
+
+      const shp = await assetLoader.getOverlay(map.theater, normName);
+      if (!shp || shp.frames.length === 0) {
+        overlayCanvasCache.set(normName, null);
+        return null;
+      }
+
+      // Pick richest frame for ore/gems (frame 11 for gold, frame 2 for gems) or frame 0 for structures/crates
+      const preferredFrame = ORE_FRAMES[normName] ?? (shp.frames.length - 1);
+      const frameIdx = Math.min(shp.frames.length - 1, Math.max(0, preferredFrame));
+      const frame = shp.frames[frameIdx] || shp.frames[0];
+
+      const c = document.createElement('canvas');
+      c.width = frame.width;
+      c.height = frame.height;
+      const cCtx = c.getContext('2d');
+      if (!cCtx) {
+        overlayCanvasCache.set(normName, null);
+        return null;
+      }
+
+      const imgData = cCtx.createImageData(frame.width, frame.height);
+      for (let p = 0; p < frame.data.length; p++) {
+        const cIdx = frame.data[p];
+        const col = basePalette[cIdx];
+        const outIdx = p * 4;
+        if (col && col.a > 0) {
+          imgData.data[outIdx] = col.r;
+          imgData.data[outIdx + 1] = col.g;
+          imgData.data[outIdx + 2] = col.b;
+          imgData.data[outIdx + 3] = col.a;
+        }
+      }
+      cCtx.putImageData(imgData, 0, 0);
+      overlayCanvasCache.set(normName, c);
+      return c;
+    };
+
+    // Pre-cache all distinct overlay types present on this map
+    const distinctOverlays = new Set<string>();
+    for (const cell of map.cells) {
+      if (cell?.overlay) distinctOverlays.add(cell.overlay.toLowerCase());
+    }
+    for (const ovName of distinctOverlays) {
+      await getOverlayCanvas(ovName);
+    }
+
+    // Draw all overlays onto nativeCanvas using drawImage (which seamlessly blends with the ground tile!)
     for (let y = 0; y < heightCells; y++) {
       for (let x = 0; x < widthCells; x++) {
         const gridX = startX + x;
@@ -718,22 +824,74 @@ export async function renderMprOriginalAssets(
         const cell = map.cells[cellIdx];
         if (!cell?.overlay || (!options.onlyDrawVisible && cell.isOutOfBounds)) continue;
 
-        const ov = cell.overlay.toLowerCase();
+        const ovCanvas = overlayCanvasCache.get(cell.overlay.toLowerCase());
         const targetPx = x * tileSize;
         const targetPy = y * tileSize;
 
-        if (ov.startsWith('gold') || ov.startsWith('gem')) {
-          const tmpl = await assetLoader.getTemplate(map.theater, ov);
-          const frameIdx = ORE_FRAMES[ov] || 0;
-          if (tmpl && tmpl.tiles[frameIdx]) {
-            drawIndexedTile(tmpl.tiles[frameIdx]!, targetPx, targetPy, basePalette);
-          }
+        if (ovCanvas) {
+          ctx.drawImage(ovCanvas, targetPx, targetPy);
+        } else if (cell.overlay.toLowerCase().startsWith('gold')) {
+          // Visual fallback: glowing gold ore crystals if pack overlay not found
+          ctx.fillStyle = '#ca8a04';
+          ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
+          ctx.fillStyle = '#fef08a';
+          ctx.fillRect(targetPx + 4, targetPy + 4, 6, 6);
+        } else if (cell.overlay.toLowerCase().startsWith('gem')) {
+          // Visual fallback: ruby gem crystals if pack overlay not found
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(targetPx + 2, targetPy + 2, tileSize - 4, tileSize - 4);
+          ctx.fillStyle = '#fca5a5';
+          ctx.fillRect(targetPx + 4, targetPy + 4, 6, 6);
         }
       }
     }
   }
 
-  // 3. Draw Terrain (Trees & Rocks using original .shp sprites)
+  // 3. Draw Terrain (Trees & Rocks using original .shp sprites with caching)
+  const terrainCanvasCache = new Map<string, HTMLCanvasElement | null>();
+  const getTerrainCanvas = async (tName: string): Promise<HTMLCanvasElement | null> => {
+    const key = tName.toLowerCase();
+    if (terrainCanvasCache.has(key)) return terrainCanvasCache.get(key) || null;
+    const shp = await assetLoader.getShp(map.theater, key);
+    if (!shp || shp.frames.length === 0) {
+      terrainCanvasCache.set(key, null);
+      return null;
+    }
+    const frame = shp.frames[0];
+    const c = document.createElement('canvas');
+    c.width = frame.width;
+    c.height = frame.height;
+    const cCtx = c.getContext('2d');
+    if (!cCtx) {
+      terrainCanvasCache.set(key, null);
+      return null;
+    }
+    const imgD = cCtx.createImageData(frame.width, frame.height);
+    for (let p = 0; p < frame.data.length; p++) {
+      const cIdx = frame.data[p];
+      const col = basePalette[cIdx];
+      const oIdx = p * 4;
+      if (col && col.a > 0) {
+        imgD.data[oIdx] = col.r;
+        imgD.data[oIdx + 1] = col.g;
+        imgD.data[oIdx + 2] = col.b;
+        imgD.data[oIdx + 3] = col.a;
+      }
+    }
+    cCtx.putImageData(imgD, 0, 0);
+    terrainCanvasCache.set(key, c);
+    return c;
+  };
+
+  // Pre-cache distinct terrain sprites
+  const distinctTerrain = new Set<string>();
+  for (const cell of map.cells) {
+    if (cell?.terrain) distinctTerrain.add(cell.terrain.toLowerCase());
+  }
+  for (const tName of distinctTerrain) {
+    await getTerrainCanvas(tName);
+  }
+
   for (let y = 0; y < heightCells; y++) {
     for (let x = 0; x < widthCells; x++) {
       const gridX = startX + x;
@@ -744,30 +902,9 @@ export async function renderMprOriginalAssets(
 
       const targetPx = x * tileSize;
       const targetPy = y * tileSize;
-      const shp = await assetLoader.getShp(map.theater, cell.terrain);
-
-      if (shp && shp.frames[0]) {
-        const frame = shp.frames[0];
-        const shpCanvas = document.createElement('canvas');
-        shpCanvas.width = frame.width;
-        shpCanvas.height = frame.height;
-        const shpCtx = shpCanvas.getContext('2d');
-        if (shpCtx) {
-          const imgD = shpCtx.createImageData(frame.width, frame.height);
-          for (let p = 0; p < frame.data.length; p++) {
-            const cIdx = frame.data[p];
-            const col = basePalette[cIdx];
-            const oIdx = p * 4;
-            if (col && col.a > 0) {
-              imgD.data[oIdx] = col.r;
-              imgD.data[oIdx + 1] = col.g;
-              imgD.data[oIdx + 2] = col.b;
-              imgD.data[oIdx + 3] = col.a;
-            }
-          }
-          shpCtx.putImageData(imgD, 0, 0);
-          ctx.drawImage(shpCanvas, targetPx, targetPy);
-        }
+      const shpCanvas = terrainCanvasCache.get(cell.terrain.toLowerCase());
+      if (shpCanvas) {
+        ctx.drawImage(shpCanvas, targetPx, targetPy);
       }
     }
   }
