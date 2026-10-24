@@ -9,6 +9,10 @@ tauri-build = { version = "1.5.6", features = [] }
 [dependencies]
 tauri = { version = "1.6.8", features = [] }
 
+[features]
+# Required by the Tauri v1 CLI for production builds.
+custom-protocol = ["tauri/custom-protocol"]
+
 [profile.release]
 opt-level = "s"
 lto = true
