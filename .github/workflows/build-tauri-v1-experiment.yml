@@ -16,11 +16,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install dependencies
+      - name: Clean install frontend dependencies with optional native packages
         shell: bash
         run: |
-          npm install
-          npm install --no-save @tauri-apps/cli@1.6.3
+          rm -f package-lock.json
+          rm -rf node_modules
+          npm install --include=optional
 
       - name: Verify Tauri CLI version
         shell: pwsh
@@ -41,6 +42,10 @@ jobs:
           $g.DrawString("RA",$f,[System.Drawing.Brushes]::White,100,280)
           $b.Save("app-icon.png",[System.Drawing.Imaging.ImageFormat]::Png)
           npx --yes @tauri-apps/cli@1.6.3 icon app-icon.png
+
+      - name: Verify Rolldown native binding
+        shell: pwsh
+        run: node -e "import('rolldown').then(() => console.log('Rolldown native binding loaded'))"
 
       - name: Build Tauri v1 x86 executable (bundling disabled in config)
         run: npx --yes @tauri-apps/cli@1.6.3 build --target i686-pc-windows-msvc
