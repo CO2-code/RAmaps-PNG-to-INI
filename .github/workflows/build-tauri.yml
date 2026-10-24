@@ -1,4 +1,4 @@
-name: Build Tauri EXE (small)
+name: Experiment - Tauri v1 Windows x86
 
 on:
   workflow_dispatch:
@@ -19,7 +19,11 @@ jobs:
           rm -f package-lock.json
           rm -rf node_modules
           npm install
-          npm install --no-save @tauri-apps/cli@2
+          npm install --no-save @tauri-apps/cli@1.6.8
+
+      - name: Install Rust x86 target
+        shell: pwsh
+        run: rustup target add i686-pc-windows-msvc
 
       - name: Generate placeholder app icon
         shell: pwsh
@@ -33,10 +37,10 @@ jobs:
           $b.Save("app-icon.png",[System.Drawing.Imaging.ImageFormat]::Png)
           npx tauri icon app-icon.png
 
-      - name: Build exe
-        run: npx tauri build --no-bundle
+      - name: Build Tauri v1 x86 executable (no installer)
+        run: npx tauri build --target i686-pc-windows-msvc --no-bundle
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RA1-PNG-to-INI-tauri
-          path: src-tauri/target/release/ra1-png-to-ini.exe
+          name: RA1-PNG-to-INI-tauri-v1-x86-experimental
+          path: src-tauri/target/i686-pc-windows-msvc/release/ra1-png-to-ini.exe
