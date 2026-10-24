@@ -50,7 +50,24 @@ jobs:
       - name: Build Tauri v1 x86 executable (bundling disabled in config)
         run: npx --yes @tauri-apps/cli@1.6.3 build --target i686-pc-windows-msvc
 
+      - name: Locate and stage executable for artifact upload
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "src-tauri/target" -Filter "ra1-png-to-ini.exe" -File -Recurse |
+            Where-Object { $_.FullName -match '\\release\\' } |
+            Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "No ra1-png-to-ini.exe found. Executables produced under src-tauri/target:"
+            Get-ChildItem -Path "src-tauri/target" -Filter "*.exe" -File -Recurse | Select-Object -ExpandProperty FullName
+            throw "Tauri build completed, but the expected executable could not be found."
+          }
+          Write-Host "Found executable: $($exe.FullName)"
+          New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
+          Copy-Item $exe.FullName "artifact/RA1-PNG-to-INI-tauri-v1-x86.exe" -Force
+          Get-Item "artifact/RA1-PNG-to-INI-tauri-v1-x86.exe" | Select-Object FullName, Length
+
       - uses: actions/upload-artifact@v4
         with:
           name: RA1-PNG-to-INI-tauri-v1-x86-experimental
-          path: src-tauri/target/i686-pc-windows-msvc/release/ra1-png-to-ini.exe
+          path: artifact/RA1-PNG-to-INI-tauri-v1-x86.exe
+          if-no-files-found: error
