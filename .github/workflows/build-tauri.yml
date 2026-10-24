@@ -1,1 +1,42 @@
-test
+name: Build Tauri EXE (small)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies (fresh, Windows-native)
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          rm -rf node_modules
+          npm install
+          npm install --no-save @tauri-apps/cli@2
+
+      - name: Generate placeholder app icon
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $b = New-Object System.Drawing.Bitmap 1024,1024
+          $g = [System.Drawing.Graphics]::FromImage($b)
+          $g.Clear([System.Drawing.Color]::FromArgb(180,30,30))
+          $f = New-Object System.Drawing.Font("Arial",360,[System.Drawing.FontStyle]::Bold)
+          $g.DrawString("RA",$f,[System.Drawing.Brushes]::White,100,280)
+          $b.Save("app-icon.png",[System.Drawing.Imaging.ImageFormat]::Png)
+          npx tauri icon app-icon.png
+
+      - name: Build exe
+        run: npx tauri build --no-bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RA1-PNG-to-INI-tauri
+          path: src-tauri/target/release/ra1-png-to-ini.exe
