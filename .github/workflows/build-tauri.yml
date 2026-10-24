@@ -21,6 +21,10 @@ jobs:
           npm install
           npm install --no-save @tauri-apps/cli@1.6.3
 
+      - name: Verify Tauri CLI version
+        shell: pwsh
+        run: npx --yes @tauri-apps/cli@1.6.3 --version
+
       - name: Install Rust x86 target
         shell: pwsh
         run: rustup target add i686-pc-windows-msvc
@@ -35,10 +39,10 @@ jobs:
           $f = New-Object System.Drawing.Font("Arial",360,[System.Drawing.FontStyle]::Bold)
           $g.DrawString("RA",$f,[System.Drawing.Brushes]::White,100,280)
           $b.Save("app-icon.png",[System.Drawing.Imaging.ImageFormat]::Png)
-          npx tauri icon app-icon.png
+          npx --yes @tauri-apps/cli@1.6.3 icon app-icon.png
 
-      - name: Build Tauri v1 x86 executable (no installer)
-        run: npx tauri build --target i686-pc-windows-msvc --no-bundle
+      - name: Build Tauri v1 x86 executable (bundling disabled in config)
+        run: npx --yes @tauri-apps/cli@1.6.3 build --target i686-pc-windows-msvc
 
       - uses: actions/upload-artifact@v4
         with:
