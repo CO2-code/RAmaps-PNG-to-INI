@@ -1,0 +1,47 @@
+name: Build experimental Tauri v1 Windows x86
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout experimental Tauri v1 branch
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/tauri-v1-win7-x86
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          npm install
+          npm install --no-save @tauri-apps/cli@1.6.8
+
+      - name: Install Rust x86 target
+        shell: pwsh
+        run: rustup target add i686-pc-windows-msvc
+
+      - name: Generate placeholder app icon
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $b = New-Object System.Drawing.Bitmap 1024,1024
+          $g = [System.Drawing.Graphics]::FromImage($b)
+          $g.Clear([System.Drawing.Color]::FromArgb(180,30,30))
+          $f = New-Object System.Drawing.Font("Arial",360,[System.Drawing.FontStyle]::Bold)
+          $g.DrawString("RA",$f,[System.Drawing.Brushes]::White,100,280)
+          $b.Save("app-icon.png",[System.Drawing.Imaging.ImageFormat]::Png)
+          npx tauri icon app-icon.png
+
+      - name: Build Tauri v1 x86 executable (no installer)
+        run: npx tauri build --target i686-pc-windows-msvc --no-bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RA1-PNG-to-INI-tauri-v1-x86-experimental
+          path: src-tauri/target/i686-pc-windows-msvc/release/ra1-png-to-ini.exe
