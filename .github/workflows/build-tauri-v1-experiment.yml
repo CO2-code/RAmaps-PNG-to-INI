@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           npm install
-          npm install --no-save @tauri-apps/cli@1.6.8
+          npm install --no-save @tauri-apps/cli@1.6.3
 
       - name: Install Rust x86 target
         shell: pwsh
