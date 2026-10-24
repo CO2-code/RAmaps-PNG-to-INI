@@ -1,6 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Sparkles, Clipboard, Check, Compass } from 'lucide-react';
-import { SAMPLE_MAPS, SampleMap } from '../lib/sampleMaps';
+import { UploadCloud, Image as ImageIcon, Check, Compass } from 'lucide-react';
 
 interface ImageUploaderProps {
   onImageLoaded: (canvas: HTMLCanvasElement, filename: string) => void;
@@ -29,7 +28,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     }
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (PNG, JPG, WebP) or click the "*.MPR → *.PNG" button above for map files.');
+      alert('Please select an image file (PNG, JPG, WebP) or click "Battlefield View" for .MPR map files.');
       return;
     }
 
@@ -91,29 +90,18 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     }
   };
 
-  const loadSampleMap = (sample: SampleMap) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      sample.draw(ctx, 128);
-      onImageLoaded(canvas, `${sample.id}.png`);
-    }
-  };
-
   return (
-    <div className="space-y-4">
-      {/* Drag & Drop Box */}
+    <div className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm space-y-4 transition-colors">
+      {/* Central Large Drag & Drop Box with solid border and cloud upload icon */}
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`relative border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center cursor-pointer transition-all duration-200 ${
+        className={`group relative rounded-xl p-8 sm:p-14 text-center cursor-pointer transition-all duration-200 border ${
           isDragging
-            ? 'border-red-500 bg-red-950/20 scale-[1.01]'
-            : 'border-neutral-800 hover:border-neutral-700 bg-neutral-900/50 hover:bg-neutral-900/80'
+            ? 'border-red-500 bg-red-50/50 dark:bg-red-950/20 ring-2 ring-red-500/20'
+            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-50/90 dark:hover:bg-slate-800/70'
         }`}
       >
         <input
@@ -128,66 +116,50 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           }}
         />
 
-        <div className="flex flex-col items-center justify-center space-y-3">
-          <div className="w-12 h-12 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center text-red-500 shadow-md">
-            <Upload className="w-6 h-6" />
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 shadow-xs group-hover:scale-105 group-hover:text-red-600 dark:group-hover:text-red-400 group-hover:border-red-200 dark:group-hover:border-red-900/60 transition-all">
+            <UploadCloud className="w-8 h-8" />
           </div>
 
-          <div>
-            <h3 className="text-sm font-bold text-white tracking-wide">
-              Click to Upload PNG or Drag & Drop Here
+          <div className="space-y-1">
+            <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white tracking-tight">
+              Drop your map image here, or <span className="text-red-600 dark:text-red-400 underline decoration-red-300 dark:decoration-red-600 underline-offset-4 group-hover:text-red-700 dark:group-hover:text-red-300">browse files</span>
             </h3>
-            <p className="text-xs text-neutral-400 mt-1">
-              Supports PNG, JPG, WebP · You can also press{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-[11px] text-neutral-200 font-mono">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Supports PNG, JPG, or WebP up to 10MB · Paste directly with{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 font-mono shadow-2xs">
                 Ctrl+V
-              </kbd>{' '}
-              to paste from clipboard!
+              </kbd>
             </p>
           </div>
 
           {currentFilename && (
-            <div className="inline-flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1 rounded-full font-mono">
-              <ImageIcon className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center gap-1.5 text-xs text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/60 px-3.5 py-1 rounded-full font-mono shadow-2xs">
+              <ImageIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>Loaded: {currentFilename}</span>
             </div>
           )}
 
           {justPasted && (
-            <div className="inline-flex items-center gap-1 text-xs text-amber-400 font-mono">
-              <Check className="w-3 h-3" /> Image pasted from clipboard!
+            <div className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-full font-medium">
+              <Check className="w-3 h-3 text-amber-600 dark:text-amber-400" /> Image pasted from clipboard!
             </div>
           )}
         </div>
       </div>
 
-      {/* Preset sample map buttons */}
-      <div className="flex flex-wrap items-center gap-2 pt-1">
-        <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1 mr-1">
-          <Sparkles className="w-3 h-3 text-red-500" /> Demo Maps:
-        </span>
-        {SAMPLE_MAPS.map((sample) => (
-          <button
-            key={sample.id}
-            type="button"
-            onClick={() => loadSampleMap(sample)}
-            className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800 text-xs font-medium text-neutral-300 transition-colors"
-          >
-            {sample.name}
-          </button>
-        ))}
-
-        {onOpenMprModal && (
+      {onOpenMprModal && (
+        <div className="flex justify-end pt-1">
           <button
             type="button"
             onClick={onOpenMprModal}
-            className="ml-auto px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-700/60 hover:border-emerald-500 text-emerald-300 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+            className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>⭐ Original Assets & *.MPR Map Gen</span>
+            <Compass className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+            <span>Have a .MPR map file? Generate from game assets →</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

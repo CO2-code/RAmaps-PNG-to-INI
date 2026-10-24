@@ -4,12 +4,6 @@ import {
   Check,
   Download,
   Terminal,
-  Sparkles,
-  Zap,
-  AlertTriangle,
-  Eye,
-  FileDown,
-  Layers,
 } from 'lucide-react';
 import { ConversionResult } from '../types';
 
@@ -20,7 +14,6 @@ interface IniOutputViewerProps {
 
 export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
   result,
-  onOptimizeResolution,
 }) => {
   const [copiedType, setCopiedType] = useState<'all' | 'previewPack' | null>(null);
   const [showFullCode, setShowFullCode] = useState<boolean>(false);
@@ -53,7 +46,6 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
       setCopiedType('all');
       setTimeout(() => setCopiedType(null), 3000);
     } catch {
-      // Fallback for older browsers
       const textarea = document.createElement('textarea');
       textarea.value = result.fullIniText;
       document.body.appendChild(textarea);
@@ -98,166 +90,106 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
     document.body.removeChild(a);
   };
 
-  const handleDownloadMprSnippet = () => {
-    const content = `; Map Preview for Red Alert 1 / CnCNet\n; Generated with RA1 PreviewPack Tool\n\n${result.fullIniText}\n`;
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `preview_${result.targetWidth}x${result.targetHeight}.mpr`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  const kbSize = (result.compressedByteCount / 1024).toFixed(1);
-  const mbSize = (result.compressedByteCount / (1024 * 1024)).toFixed(2);
-
   return (
-    <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl overflow-hidden space-y-0 shadow-2xl">
-      {/* Top Action Header */}
-      <div className="bg-neutral-950 px-4 py-3 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Terminal className="w-4 h-4 text-red-500" />
-          <span className="font-bold text-xs uppercase tracking-wider text-white font-['Rajdhani',sans-serif]">
-            Generated Map INI Output
-          </span>
-          <span
-            className={`text-[11px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
-              lineCount <= 1200
-                ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800/50'
-                : lineCount <= 2500
-                ? 'text-amber-400 bg-amber-950/60 border-amber-800/50'
-                : 'text-red-400 bg-red-950/60 border-red-800/50'
-            }`}
-          >
-            {lineCount.toLocaleString()} Lines
-            {lineCount <= 1200 ? ' · Optimal' : lineCount > 2500 ? ' · ⚠️ 23k+ High' : ''}
-          </span>
-          <span className="text-[11px] font-mono text-neutral-400">
-            ({result.compressedByteCount > 1048576 ? `${mbSize} MB` : `${kbSize} KB`})
-          </span>
+    <div className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm space-y-4 transition-colors">
+      {/* Header and Actions Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+              Ready-to-Paste INI Code
+            </h3>
+            <span className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded">
+              {result.lineCount.toLocaleString()} lines
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Formatted with [Preview] and [PreviewPack] base64 blocks
+          </p>
         </div>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={handleCopyPreviewPackOnly}
-            disabled={isCopying}
-            className="px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
-          >
-            {copiedType === 'previewPack' ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400 font-semibold">
-                  Copied {lineCount.toLocaleString()} Lines!
-                </span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5 text-amber-400" />
-                <span>Copy [PreviewPack]</span>
-              </>
-            )}
-          </button>
-
-          <button
+            type="button"
             onClick={handleCopyAll}
             disabled={isCopying}
-            className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shadow-red-950/40 disabled:opacity-50 active:scale-95"
+            className="px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-red-600 hover:bg-slate-800 dark:hover:bg-red-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
           >
             {copiedType === 'all' ? (
               <>
-                <Check className="w-3.5 h-3.5 text-white" />
-                <span>Copied All ({lineCount.toLocaleString()} lines)!</span>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Copied All!</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5" />
-                <span>Copy [Preview] + [PreviewPack]</span>
+                <span>Copy All INI</span>
               </>
             )}
           </button>
 
-          {/* Download Buttons */}
           <button
-            onClick={handleDownloadIni}
-            className="px-2.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-medium flex items-center gap-1 transition-colors"
-            title="Download as .INI file"
+            type="button"
+            onClick={handleCopyPreviewPackOnly}
+            disabled={isCopying}
+            className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">.INI</span>
+            {copiedType === 'previewPack' ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span>[PreviewPack] Only</span>
+              </>
+            )}
           </button>
 
           <button
-            onClick={handleDownloadMprSnippet}
-            className="px-2.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-medium flex items-center gap-1 transition-colors"
-            title="Download as .MPR snippet file"
+            type="button"
+            onClick={handleDownloadIni}
+            className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Download preview snippet as an .ini file"
           >
-            <FileDown className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden sm:inline">.MPR</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>.INI</span>
           </button>
         </div>
       </div>
 
-      {/* Advisory Bar when lines are high */}
-      {lineCount > 2500 && (
-        <div className="bg-amber-950/40 border-b border-amber-800/60 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-start sm:items-center gap-2 text-amber-300">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
-            <span>
-              <strong>Large [PreviewPack] ({lineCount.toLocaleString()} lines · {mbSize} MB):</strong>{' '}
-              Official CnCNet / XCC standard is &lt; 257×257 px (~800–1,100 lines). Overly large files slow down lobby player downloads and freeze text editors.
-            </span>
-          </div>
-
-          {onOptimizeResolution && (
+      {/* Code Monospace Box */}
+      <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-inner">
+        <div className="bg-slate-900/90 border-b border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-400 font-mono">
+          <span className="flex items-center gap-2">
+            <Terminal className="w-3.5 h-3.5 text-slate-400" />
+            <span>INI Section Output</span>
+          </span>
+          {isLarge && (
             <button
-              onClick={onOptimizeResolution}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 shrink-0 shadow-md transition-colors"
+              type="button"
+              onClick={() => setShowFullCode(!showFullCode)}
+              className="text-[11px] text-slate-300 hover:text-white underline cursor-pointer"
             >
-              <Zap className="w-3.5 h-3.5 fill-white" />
-              <span>Fix: Auto-Fit to &lt; 1,000 Lines</span>
+              {showFullCode ? 'Collapse preview' : 'View full text'}
             </button>
           )}
         </div>
-      )}
 
-      {/* Code Textarea Viewer with Windowing */}
-      <div className="relative">
-        <pre className="p-4 bg-neutral-950/90 font-mono text-xs text-neutral-300 overflow-x-auto max-h-[380px] overflow-y-auto leading-relaxed select-all selection:bg-red-900 selection:text-white">
+        <pre className="p-4 text-xs font-mono text-emerald-400/90 overflow-x-auto max-h-[300px] leading-relaxed selection:bg-slate-700 selection:text-white">
           <code>{displaySnippet}</code>
         </pre>
-
-        {isLarge && (
-          <div className="absolute bottom-3 right-4 z-10">
-            <button
-              onClick={() => setShowFullCode(!showFullCode)}
-              className="px-3 py-1 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700 text-[11px] font-mono text-neutral-300 hover:text-white transition-colors flex items-center gap-1 shadow-md backdrop-blur-sm"
-            >
-              <Eye className="w-3 h-3 text-cyan-400" />
-              <span>
-                {showFullCode
-                  ? 'Collapse Preview'
-                  : `Show All ${lineCount.toLocaleString()} Lines in Viewer`}
-              </span>
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Integration Guide Footer */}
-      <div className="bg-neutral-950/60 p-3.5 border-t border-neutral-800/80 text-xs text-neutral-400 space-y-1">
-        <div className="font-semibold text-neutral-200 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          Quick Tip for 20k+ Lines:
-        </div>
-        <p className="text-[11px] text-neutral-400 leading-relaxed font-mono">
-          Because copying 23k+ lines can sometimes strain simple text editors, you can click{' '}
-          <strong className="text-cyan-300">Download .INI</strong> or{' '}
-          <strong className="text-amber-300">.MPR</strong> above, or use the{' '}
-          <span className="text-white font-medium">Map Injector</span> button in the top bar to merge it directly into your map file in 1 second!
-        </p>
+      {/* Quick Paste Guide */}
+      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <span className="flex items-center gap-2">
+          <span className="font-semibold text-slate-900 dark:text-white">How to use:</span>
+          <span>Paste these sections anywhere inside your <code className="font-mono text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1 py-0.5 rounded">.mpr</code> or <code className="font-mono text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1 py-0.5 rounded">.ini</code> map file.</span>
+        </span>
+        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">CnCNet & XCC compatible</span>
       </div>
     </div>
   );

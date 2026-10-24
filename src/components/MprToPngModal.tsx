@@ -19,6 +19,8 @@ import {
   FolderArchive,
   AlertTriangle,
   Cpu,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   parseMprMap,
@@ -84,6 +86,8 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     showGrid: false,
     theaterOverride: undefined,
   });
+
+  const [isAdvancedLayersOpen, setIsAdvancedLayersOpen] = useState<boolean>(false);
 
   // Load sample on open
   useEffect(() => {
@@ -340,24 +344,24 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-5xl bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+      <div className="relative w-full max-w-5xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] transition-colors">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-neutral-800 bg-neutral-950">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-red-950/70 border border-red-700/60 text-red-400 shadow-md">
+            <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/70 border border-red-200 dark:border-red-700/60 text-red-600 dark:text-red-400 shadow-xs">
               <Compass className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
-                  Red Alert 1 <span className="text-red-500">*.MPR → *.PNG</span> Map Generator
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-wide">
+                  Red Alert 1 <span className="text-red-600">*.MPR → *.PNG</span> Map Generator
                 </h2>
-                <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 bg-emerald-950/70 border border-emerald-800/60 px-2 py-0.5 rounded">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-800 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded font-bold">
                   {assetEngine === 'original' ? 'Original Westwood Assets' : 'Tactical Vector'}
                 </span>
               </div>
-              <p className="text-xs text-neutral-400 font-mono">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 Ported from Iran's RAFullMapPreviewGenerator · Generate preview images using original 24×24 game tiles or tactical vector
               </p>
             </div>
@@ -365,38 +369,38 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Top Control Bar: Source Switcher & Map Picker */}
-        <div className="p-3 sm:px-6 bg-neutral-950/80 border-b border-neutral-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="p-3 sm:px-6 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
-            <span className="text-neutral-400 font-semibold uppercase tracking-wider text-[11px]">
+            <span className="text-slate-600 dark:text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
               Map Source:
             </span>
-            <div className="flex items-center rounded-lg bg-neutral-900 p-0.5 border border-neutral-800">
+            <div className="flex items-center rounded-lg bg-white dark:bg-slate-900 p-0.5 border border-slate-200 dark:border-slate-800">
               <button
                 onClick={() => {
                   setActiveSource('sample');
                   handleSelectSample(selectedSampleId);
                 }}
-                className={`px-3 py-1 rounded-md transition-colors font-medium ${
+                className={`px-3 py-1 rounded-md transition-colors font-medium cursor-pointer ${
                   activeSource === 'sample'
-                    ? 'bg-red-600 text-white shadow-sm'
-                    : 'text-neutral-400 hover:text-neutral-200'
+                    ? 'bg-red-600 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-neutral-200'
                 }`}
               >
                 Sample Maps
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className={`px-3 py-1 rounded-md transition-colors font-medium flex items-center gap-1.5 ${
+                className={`px-3 py-1 rounded-md transition-colors font-medium flex items-center gap-1.5 cursor-pointer ${
                   activeSource === 'upload'
-                    ? 'bg-red-600 text-white shadow-sm'
-                    : 'text-neutral-400 hover:text-neutral-200'
+                    ? 'bg-red-600 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-neutral-200'
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" />
@@ -418,11 +422,11 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
           {activeSource === 'sample' && (
             <div className="flex items-center gap-2">
-              <span className="text-neutral-500 font-mono text-[11px]">Pick Map:</span>
+              <span className="text-slate-500 font-mono text-[11px]">Pick Map:</span>
               <select
                 value={selectedSampleId}
                 onChange={(e) => handleSelectSample(e.target.value)}
-                className="bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1 text-xs text-neutral-200 font-medium focus:outline-none focus:border-red-500"
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-neutral-200 font-medium focus:outline-none focus:border-red-500"
               >
                 {SAMPLE_MPR_MAPS.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -877,111 +881,126 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
               </div>
             )}
 
-            {/* Rendering Controls */}
+            {/* Advanced Rendering & Layer Controls */}
             {viewMode === 'full_render' && (
-              <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-4">
-                <div className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider">
-                  <Sliders className="w-4 h-4 text-red-500" />
-                  <span>Display & Layer Options</span>
-                </div>
-
-                {/* Draw Visible Only Toggle (--drawvisibleonly) */}
-                <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
-                  <div>
-                    <div className="text-xs font-bold text-white">Crop to Visible Bounds</div>
-                    <div className="text-[10px] text-neutral-400 font-mono">
-                      Matches Iran's <code className="text-amber-400">--drawvisibleonly</code> (removes black out-of-bounds border)
-                    </div>
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAdvancedLayersOpen(!isAdvancedLayersOpen)}
+                  className="w-full flex items-center justify-between text-left cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-neutral-300 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wider">
+                    <Sliders className="w-4 h-4 text-red-500" />
+                    <span>Advanced Layer & Crop Options</span>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={renderOptions.onlyDrawVisible}
-                    onChange={(e) =>
-                      setRenderOptions((prev) => ({ ...prev, onlyDrawVisible: e.target.checked }))
-                    }
-                    className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
-                  />
-                </label>
+                  {isAdvancedLayersOpen ? (
+                    <ChevronUp className="w-4 h-4 text-slate-500 group-hover:text-slate-900 dark:group-hover:text-white" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-900 dark:group-hover:text-white" />
+                  )}
+                </button>
 
-                {/* Show Spawn Waypoints Toggle */}
-                <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
-                  <div>
-                    <div className="text-xs font-bold text-white">Player Spawn Locations</div>
-                    <div className="text-[10px] text-neutral-400 font-mono">
-                      Numbered color badges for players 1 to 8
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={renderOptions.showWaypoints}
-                    onChange={(e) =>
-                      setRenderOptions((prev) => ({ ...prev, showWaypoints: e.target.checked }))
-                    }
-                    className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
-                  />
-                </label>
+                {isAdvancedLayersOpen && (
+                  <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-neutral-900 animate-fade-in">
+                    {/* Draw Visible Only Toggle (--drawvisibleonly) */}
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-white dark:bg-neutral-900/70 border border-slate-200 dark:border-neutral-800 hover:border-slate-300 dark:hover:border-neutral-700 transition-colors">
+                      <div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white">Crop to Visible Bounds</div>
+                        <div className="text-[10px] text-slate-500 dark:text-neutral-400 font-mono">
+                          Matches Iran's <code className="text-amber-500">--drawvisibleonly</code>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.onlyDrawVisible}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, onlyDrawVisible: e.target.checked }))
+                        }
+                        className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
+                      />
+                    </label>
 
-                {/* Show Ore & Gems Toggle */}
-                <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
-                  <div>
-                    <div className="text-xs font-bold text-white">Resource Overlays (Ore & Gems)</div>
-                    <div className="text-[10px] text-neutral-400 font-mono">
-                      Highlights glistening gold and ruby crystals
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={renderOptions.showOre}
-                    onChange={(e) =>
-                      setRenderOptions((prev) => ({ ...prev, showOre: e.target.checked }))
-                    }
-                    className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
-                  />
-                </label>
+                    {/* Show Spawn Waypoints Toggle */}
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
+                      <div>
+                        <div className="text-xs font-bold text-white">Player Spawn Locations</div>
+                        <div className="text-[10px] text-neutral-400 font-mono">
+                          Numbered color badges for players 1 to 8
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showWaypoints}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showWaypoints: e.target.checked }))
+                        }
+                        className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
+                      />
+                    </label>
 
-                {/* Show Structures Toggle */}
-                <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
-                  <div>
-                    <div className="text-xs font-bold text-white">Base Buildings & Defenses</div>
-                    <div className="text-[10px] text-neutral-400 font-mono">
-                      Shows pre-placed base buildings with faction color
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={renderOptions.showStructures}
-                    onChange={(e) =>
-                      setRenderOptions((prev) => ({ ...prev, showStructures: e.target.checked }))
-                    }
-                    className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
-                  />
-                </label>
+                    {/* Show Ore & Gems Toggle */}
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
+                      <div>
+                        <div className="text-xs font-bold text-white">Resource Overlays (Ore & Gems)</div>
+                        <div className="text-[10px] text-neutral-400 font-mono">
+                          Highlights glistening gold and ruby crystals
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showOre}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showOre: e.target.checked }))
+                        }
+                        className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
+                      />
+                    </label>
 
-                {/* Show Walls & Fences Toggle */}
-                <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
-                  <div>
-                    <div className="text-xs font-bold text-white">Defensive Walls & Fences</div>
-                    <div className="text-[10px] text-neutral-400 font-mono">
-                      Autotiled walls (BRIK, SBAG), fences, and interior bunker walls (XTRA, WALL)
-                    </div>
+                    {/* Show Structures Toggle */}
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
+                      <div>
+                        <div className="text-xs font-bold text-white">Base Buildings & Defenses</div>
+                        <div className="text-[10px] text-neutral-400 font-mono">
+                          Shows pre-placed base buildings with faction color
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showStructures}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showStructures: e.target.checked }))
+                        }
+                        className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
+                      />
+                    </label>
+
+                    {/* Show Walls & Fences Toggle */}
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-xl bg-neutral-900/70 border border-neutral-800 hover:border-neutral-700 transition-colors">
+                      <div>
+                        <div className="text-xs font-bold text-white">Defensive Walls & Fences</div>
+                        <div className="text-[10px] text-neutral-400 font-mono">
+                          Autotiled walls (BRIK, SBAG), fences, and interior bunker walls (XTRA, WALL)
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={renderOptions.showWalls !== false}
+                        onChange={(e) =>
+                          setRenderOptions((prev) => ({ ...prev, showWalls: e.target.checked }))
+                        }
+                        className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
+                      />
+                    </label>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={renderOptions.showWalls !== false}
-                    onChange={(e) =>
-                      setRenderOptions((prev) => ({ ...prev, showWalls: e.target.checked }))
-                    }
-                    className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 focus:ring-0 focus:ring-offset-0"
-                  />
-                </label>
+                )}
               </div>
             )}
 
             {/* Action Buttons */}
-            <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-2.5">
+            <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2.5">
               <button
                 onClick={() => handleDownloadPng(1)}
-                className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-950/60 transition-all cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>
@@ -991,19 +1010,19 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
               <button
                 onClick={() => handleDownloadPng(2)}
-                className="w-full px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                <Maximize2 className="w-3.5 h-3.5 text-amber-500" />
                 <span>Download Double Resolution (2× Scale)</span>
               </button>
 
               {onSendToGenerator && (
                 <button
                   onClick={handleSendToApp}
-                  className="w-full px-3 py-2 rounded-xl bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-700/60 text-emerald-300 font-mono text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  className="w-full px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700/60 text-emerald-800 dark:text-emerald-300 font-mono text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                   title="Directly transfer this map preview into the main app to generate a [PreviewPack] INI code"
                 >
-                  <ArrowRight className="w-4 h-4 text-emerald-400" />
+                  <ArrowRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <span>Use in PreviewPack Generator</span>
                 </button>
               )}
@@ -1012,11 +1031,11 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 sm:p-5 border-t border-neutral-800 bg-neutral-950 flex items-center justify-between text-xs text-neutral-500 font-mono">
+        <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-mono">
           <div>Supports Red Alert 1 .MPR and .INI maps with authentic Westwood game assets</div>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium cursor-pointer"
           >
             Close
           </button>

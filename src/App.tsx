@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, ShieldCheck, AlertTriangle, X, Check, Sparkles, Compass, MapPin } from 'lucide-react';
+import { ShieldCheck, X, Check, Compass, FolderKanban } from 'lucide-react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
 import { ControlPanel } from './components/ControlPanel';
@@ -9,9 +9,9 @@ import { MapInjectorModal } from './components/MapInjectorModal';
 import { ReverseDecoderModal } from './components/ReverseDecoderModal';
 import { Ra1ResearchModal } from './components/Ra1ResearchModal';
 import { MprToPngModal } from './components/MprToPngModal';
+import { BatchMapModal } from './components/BatchMapModal';
 import { ConversionOptions, ConversionResult } from './types';
 import { convertImageToPreviewPack } from './lib/formatters';
-import { SAMPLE_MAPS } from './lib/sampleMaps';
 
 const DEFAULT_OPTIONS: ConversionOptions = {
   width: 256,
@@ -29,7 +29,7 @@ const DEFAULT_OPTIONS: ConversionOptions = {
 
 export default function App() {
   const [sourceCanvas, setSourceCanvas] = useState<HTMLCanvasElement | null>(null);
-  const [currentFilename, setCurrentFilename] = useState<string>('hostile_waters.png');
+  const [currentFilename, setCurrentFilename] = useState<string>('');
   const [options, setOptions] = useState<ConversionOptions>(DEFAULT_OPTIONS);
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [autoScaledNotice, setAutoScaledNotice] = useState<{
@@ -44,23 +44,14 @@ export default function App() {
   const [isDecoderOpen, setIsDecoderOpen] = useState<boolean>(false);
   const [isInjectorOpen, setIsInjectorOpen] = useState<boolean>(false);
   const [isMprModalOpen, setIsMprModalOpen] = useState<boolean>(false);
-
-  // Initialize with the first demo map on first launch
-  useEffect(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      SAMPLE_MAPS[0].draw(ctx, 128);
-      setSourceCanvas(canvas);
-      setCurrentFilename('hostile_waters.png');
-    }
-  }, []);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
 
   // Re-run conversion whenever sourceCanvas or options change
   useEffect(() => {
-    if (!sourceCanvas) return;
+    if (!sourceCanvas) {
+      setResult(null);
+      return;
+    }
     try {
       const res = convertImageToPreviewPack(sourceCanvas, options);
       setResult(res);
@@ -74,8 +65,6 @@ export default function App() {
     setCurrentFilename(filename);
 
     const maxDim = Math.max(canvas.width, canvas.height);
-    // If image exceeds recommended 256px, auto-scale down to CnCNet standard (<= 256px)
-    // to prevent 23,000+ line bloat while maintaining pixel-perfect fidelity in the lobby!
     if (maxDim > 256) {
       const scale = 256 / maxDim;
       const targetW = Math.max(16, Math.round(canvas.width * scale));
@@ -125,89 +114,58 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-red-600 selection:text-white">
-      {/* Header */}
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans selection:bg-red-600 selection:text-white transition-colors duration-150">
+      {/* Clean Minimalist Top Navigation Header */}
       <Header
         onOpenResearch={() => setIsResearchOpen(true)}
         onOpenDecoder={() => setIsDecoderOpen(true)}
         onOpenInjector={() => setIsInjectorOpen(true)}
         onOpenMprToPng={() => setIsMprModalOpen(true)}
+        onOpenBatch={() => setIsBatchModalOpen(true)}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-8 space-y-8">
-        {/* Intro Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-900 pb-5">
+      {/* Main Dashboard Container */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Dashboard Title & Quick Action CTAs */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">
-                CnCNet XNA Client & XCC Compatible
-              </span>
-              <span className="text-neutral-600">·</span>
-              <span className="text-xs text-neutral-400 font-mono">Red Alert 1 & Tiberian Sun</span>
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">
+              <span>CnCNet XNA Client</span>
+              <span aria-hidden="true">·</span>
+              <span>XCC Mixer LZO1X</span>
+              <span aria-hidden="true">·</span>
+              <span>Red Alert 1 & Tiberian Sun</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              PNG to INI [PreviewPack] Converter
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              Map PreviewPack & INI Studio
             </h1>
-            <p className="text-sm text-neutral-400 max-w-2xl mt-1">
-              Upload any PNG or map image to generate authentic LZO1X 24-bit RGB (CnCNet / XCC standard) or classic LCW Format80{' '}
-              <code className="text-amber-400 font-mono">[Preview]</code> and{' '}
-              <code className="text-amber-400 font-mono">[PreviewPack]</code> sections ready to paste directly into your map files.
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+              Convert any PNG or battlefield render into authentic LZO1X 24-bit TrueColor or classic LCW Format80 INI sections ready to paste into your map files.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
-              onClick={() => setIsMprModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-950 via-neutral-900 to-emerald-950 hover:from-red-900 hover:to-emerald-900 border border-emerald-500/70 text-white text-xs font-bold flex items-center gap-2.5 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer group"
+              type="button"
+              onClick={() => setIsBatchModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-red-600 hover:bg-slate-800 dark:hover:bg-red-700 text-white text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
-              <Sparkles className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-              <div className="text-left">
-                <div className="text-[10px] font-mono text-emerald-300 uppercase tracking-wider font-semibold">1,780 Game Assets</div>
-                <div className="text-sm font-bold text-white">⭐ Original Assets Map Gen</div>
-              </div>
+              <FolderKanban className="w-4 h-4 text-amber-400 dark:text-white" />
+              <span>📁 Batch Map Studio</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsMprModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            >
+              <Compass className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Battlefield View</span>
             </button>
           </div>
         </div>
 
-        {/* Featured Original Westwood Assets Map Generator Card */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-neutral-900 via-neutral-900/90 to-emerald-950/40 border border-neutral-800 hover:border-neutral-700 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600 to-emerald-500 p-0.5 shadow-lg shadow-emerald-950/40 shrink-0 flex items-center justify-center">
-              <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-amber-400" />
-              </div>
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-bold text-white tracking-wide">
-                  Original Westwood Assets Map Generator
-                </span>
-                <span className="text-[10px] font-mono uppercase bg-emerald-950/80 border border-emerald-600/60 text-emerald-300 font-bold px-2 py-0.5 rounded">
-                  Iran RAFullMapPreviewGenerator Port
-                </span>
-                <span className="text-[10px] font-mono text-neutral-400">
-                  Temperate · Snow · Winter · Interior
-                </span>
-              </div>
-              <p className="text-xs text-neutral-400 mt-1 max-w-2xl">
-                Render full-resolution battlefield images directly from any <code className="text-amber-400 font-mono">.MPR</code> or <code className="text-amber-400 font-mono">.INI</code> map using authentic 24×24 terrain tiles, SHP sprites, gold ore, gems, and player spawns.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setIsMprModalOpen(true)}
-              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-colors cursor-pointer"
-            >
-              <Compass className="w-4 h-4" />
-              <span>Launch Original Assets Map View</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Upload Zone */}
+        {/* Upload Card Area */}
         <ImageUploader
           onImageLoaded={handleImageLoaded}
           currentFilename={currentFilename}
@@ -216,21 +174,21 @@ export default function App() {
 
         {/* Auto-Scaled Notice Banner if uploaded image was larger than 256px */}
         {autoScaledNotice && (
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-emerald-950/60 border border-emerald-700/60 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs animate-fade-in">
-            <div className="flex items-start gap-3 text-neutral-200">
-              <div className="p-2 rounded-xl bg-emerald-900/60 border border-emerald-600/50 text-emerald-400 shrink-0">
+          <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+            <div className="flex items-start gap-3.5 text-slate-700 dark:text-slate-200">
+              <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 shrink-0">
                 <ShieldCheck className="w-5 h-5" />
               </div>
-              <div className="space-y-0.5">
-                <div className="font-bold text-white text-sm flex items-center gap-2">
+              <div className="space-y-1">
+                <div className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
                   <span>Auto-Optimized to {autoScaledNotice.scaledW}×{autoScaledNotice.scaledH} (~800–1,100 lines)</span>
-                  <span className="text-[10px] font-mono text-emerald-300 bg-emerald-900/80 px-2 py-0.5 rounded-full border border-emerald-600/40">
+                  <span className="text-[10px] font-mono text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/80 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700">
                     CnCNet Standard
                   </span>
                 </div>
-                <p className="text-neutral-400 text-xs leading-relaxed max-w-2xl">
-                  Your uploaded image is <strong className="text-white font-mono">{autoScaledNotice.originalW}×{autoScaledNotice.originalH}</strong> (which would create <strong>23,000+ lines</strong> and bloat the map file to ~1.6 MB).
-                  It was automatically scaled down to the official <strong className="text-emerald-300">&lt; 257px</strong> standard so players can download your map instantly with zero lobby lag.
+                <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed max-w-2xl">
+                  Uploaded image was <strong className="font-mono text-slate-900 dark:text-white">{autoScaledNotice.originalW}×{autoScaledNotice.originalH}</strong> (which would generate 23,000+ lines and lag in-game lobby downloads).
+                  It was automatically scaled down to <strong className="text-emerald-800 dark:text-emerald-300">≤ 256px</strong> for instant player downloads.
                 </p>
               </div>
             </div>
@@ -239,7 +197,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setAutoScaledNotice(null)}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors"
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
               >
                 <Check className="w-3.5 h-3.5" />
                 <span>Keep Optimized</span>
@@ -254,17 +212,17 @@ export default function App() {
                     height: autoScaledNotice.originalH,
                   }));
                 }}
-                className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-mono transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-mono transition-colors cursor-pointer"
                 title="Switch to full original resolution (creates 23k+ lines)"
               >
-                <span>Full {autoScaledNotice.originalW}×{autoScaledNotice.originalH} (⚠️ 23k)</span>
+                Full {autoScaledNotice.originalW}×{autoScaledNotice.originalH}
               </button>
 
               <button
                 type="button"
                 onClick={() => setAutoScaledNotice(null)}
-                className="p-1.5 rounded-lg text-neutral-500 hover:text-white transition-colors"
-                title="Dismiss banner"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                title="Dismiss"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -272,45 +230,36 @@ export default function App() {
           </div>
         )}
 
-        {/* 2-Column Workspace: Left = Visual Preview & Code, Right = Settings Panel */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-          {/* Left Column (7 cols): Visual Viewport + INI Output Code */}
-          <div className="lg:col-span-7 xl:col-span-8 space-y-6">
-            {/* Live Reconstructed Preview Viewport */}
-            <PreviewViewport
-              sourceCanvas={sourceCanvas}
-              result={result}
-            />
+        {/* All Settings in a Clean "Advanced Settings" Dropdown / Collapsible Card */}
+        <ControlPanel
+          options={options}
+          onChange={handleUpdateOptions}
+          sourceWidth={sourceCanvas?.width}
+          sourceHeight={sourceCanvas?.height}
+          defaultOpen={false}
+        />
 
-            {/* Ready-to-Paste INI Code Viewer */}
-            <IniOutputViewer
-              result={result}
-              onOptimizeResolution={handleOptimizeToCncNetStandard}
-            />
-          </div>
+        {/* Live Reconstructed Preview Viewport with Large Data Metrics */}
+        <PreviewViewport
+          sourceCanvas={sourceCanvas}
+          result={result}
+        />
 
-          {/* Right Column (5 cols): Controls & Configuration */}
-          <div className="lg:col-span-5 xl:col-span-4 space-y-6">
-            <div className="sticky top-20">
-              <ControlPanel
-                options={options}
-                onChange={handleUpdateOptions}
-                sourceWidth={sourceCanvas?.width}
-                sourceHeight={sourceCanvas?.height}
-              />
-            </div>
-          </div>
-        </div>
+        {/* Ready-to-Paste INI Code Viewer */}
+        <IniOutputViewer
+          result={result}
+          onOptimizeResolution={handleOptimizeToCncNetStandard}
+        />
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-neutral-900 bg-neutral-950/80 py-6 px-4 text-center text-xs text-neutral-500 font-mono">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* Clean Minimalist Footer */}
+      <footer className="border-t border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60 py-6 px-4 text-center text-xs text-slate-500 dark:text-slate-400 mt-12 transition-colors">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div>
             xna-cncnet-client & XCC Mixer LZO1X 24-bit Engine · Command & Conquer Map Tool
           </div>
-          <div className="text-[11px] text-neutral-600">
-            Compatible with .MPR and .INI map formats
+          <div className="text-[11px] text-slate-400 dark:text-slate-500">
+            Supports Red Alert 1, Tiberian Sun, and Red Alert 2 map previews
           </div>
         </div>
       </footer>
@@ -337,6 +286,11 @@ export default function App() {
         isOpen={isMprModalOpen}
         onClose={() => setIsMprModalOpen(false)}
         onSendToGenerator={handleImageLoaded}
+      />
+
+      <BatchMapModal
+        isOpen={isBatchModalOpen}
+        onClose={() => setIsBatchModalOpen(false)}
       />
     </div>
   );

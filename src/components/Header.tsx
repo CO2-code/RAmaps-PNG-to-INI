@@ -1,11 +1,13 @@
 import React from 'react';
-import { Terminal, BookOpen, Layers, ArrowLeftRight, FileCode, Compass, Sparkles } from 'lucide-react';
+import { FolderKanban, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 interface HeaderProps {
   onOpenResearch: () => void;
   onOpenDecoder: () => void;
   onOpenInjector: () => void;
   onOpenMprToPng: () => void;
+  onOpenBatch: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -13,73 +15,94 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenDecoder,
   onOpenInjector,
   onOpenMprToPng,
+  onOpenBatch,
 }) => {
+  const { theme, toggleTheme } = useTheme();
+
   return (
-    <header className="border-b border-neutral-800 bg-neutral-950/95 sticky top-0 z-40 px-4 lg:px-8 py-3">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-xs transition-colors">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Brand identity */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-red-950/60 border border-red-700/60 flex items-center justify-center shadow-lg shadow-red-950/40">
-            <span className="font-['Orbitron',sans-serif] text-sm font-black text-red-500">
-              RA1
-            </span>
+          <div className="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center text-white shadow-xs font-bold text-xs tracking-wider font-['Orbitron',sans-serif]">
+            RA1
           </div>
-
-          <div>
+          <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="font-bold tracking-wider text-white text-base font-['Rajdhani',sans-serif]">
-                RED ALERT 1 <span className="text-red-500">PREVIEWPACK</span> & MAP STUDIO
+              <span className="font-bold text-slate-900 dark:text-white text-base tracking-tight font-['Rajdhani',sans-serif]">
+                RED ALERT 1 <span className="text-red-600">MAP STUDIO</span>
               </span>
-              <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 px-1.5 py-0.5 rounded">
-                LCW & LZO Engine
+              <span className="hidden sm:inline-flex items-center text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded">
+                v1.0
               </span>
             </div>
-            <p className="text-xs text-neutral-400 font-mono">
-              PNG ⇄ [PreviewPack] & authentic Westwood 24×24 original assets map generator
-            </p>
+            <span className="hidden md:inline text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+              LZO TrueColor & LCW PreviewPack Generator
+            </span>
           </div>
         </div>
 
-        {/* Action utility buttons */}
-        <div className="flex items-center gap-2">
+        {/* Minimal text links & Clean Theme Toggle */}
+        <nav className="flex items-center gap-1 sm:gap-2">
           <button
+            type="button"
             onClick={onOpenMprToPng}
-            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-red-950 via-neutral-900 to-emerald-950 border border-emerald-500/70 hover:border-emerald-400 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 hover:shadow-emerald-900/50 cursor-pointer"
-            title="Convert Red Alert 1 *.MPR map files to *.PNG preview images with authentic Westwood 24×24 game assets (Iran RAFullMapPreviewGenerator port)"
+            className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1.5 rounded-md hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>⭐ Original Assets & MPR Map</span>
-            <span className="hidden sm:inline-block text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-              24×24
-            </span>
+            Battlefield View
           </button>
 
           <button
+            type="button"
             onClick={onOpenDecoder}
-            className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
-            title="Decode an existing [PreviewPack] from any map file into PNG"
+            className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1.5 rounded-md hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">Test / Decode INI</span>
+            Decode INI
           </button>
 
           <button
+            type="button"
             onClick={onOpenInjector}
-            className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
-            title="Inject preview into an existing .mpr or .ini map file"
+            className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1.5 rounded-md hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <FileCode className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden md:inline">Map Injector</span>
+            Map Injector
           </button>
 
           <button
+            type="button"
             onClick={onOpenResearch}
-            className="px-3 py-1.5 rounded-lg bg-red-950/40 border border-red-800/60 hover:border-red-600 text-red-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
+            className="hidden lg:inline-flex text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1.5 rounded-md hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <BookOpen className="w-3.5 h-3.5 text-red-400" />
-            <span>RA1 Map Docs</span>
+            Docs
           </button>
-        </div>
+
+          {/* Theme switcher toggle */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors cursor-pointer ml-1"
+            title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Slate Theme'}
+            aria-label="Toggle color theme"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-600" />
+            )}
+          </button>
+
+          {/* Solid Call-To-Action Button */}
+          <div className="ml-1 pl-1.5 border-l border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={onOpenBatch}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-slate-900 dark:bg-red-600 hover:bg-slate-800 dark:hover:bg-red-700 text-white text-xs sm:text-sm font-medium shadow-xs transition-all cursor-pointer"
+            >
+              <FolderKanban className="w-4 h-4 text-amber-400 dark:text-white" />
+              <span>Batch Studio</span>
+            </button>
+          </div>
+        </nav>
       </div>
     </header>
   );

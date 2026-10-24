@@ -362,6 +362,15 @@ export function injectPreviewIntoMapFile(
 }
 
 /**
+ * Strips [Preview] and [PreviewPack] sections from map file text
+ */
+export function stripPreviewFromMapFile(mapFileText: string): string {
+  const previewRegex = /\[Preview\][\s\S]*?(?=\n\[|$)/i;
+  const previewPackRegex = /\[PreviewPack\][\s\S]*?(?=\n\[|$)/i;
+  return mapFileText.replace(previewRegex, '').replace(previewPackRegex, '').trim() + '\n';
+}
+
+/**
  * Calculates optimal width and height to fit within a target INI line budget
  * (e.g. 500, 1000, 2000 lines) while preserving the source aspect ratio.
  */
