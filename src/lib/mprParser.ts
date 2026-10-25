@@ -30,6 +30,14 @@ export interface MprStructure {
   x: number;
   y: number;
   angle: number;
+  isFake?: boolean;
+}
+
+export interface MprBaseStructure {
+  name: string;
+  x: number;
+  y: number;
+  isFake?: boolean;
 }
 
 export interface MprUnit {
@@ -37,6 +45,23 @@ export interface MprUnit {
   side: string;
   x: number;
   y: number;
+  angle: number;
+}
+
+export interface MprShip {
+  name: string;
+  side: string;
+  x: number;
+  y: number;
+  angle: number;
+}
+
+export interface MprInfantry {
+  name: string;
+  side: string;
+  x: number;
+  y: number;
+  subCell: number;
   angle: number;
 }
 
@@ -50,7 +75,12 @@ export interface MprMapData {
   cells: MprCell[]; // 128 x 128 = 16384 cells
   waypoints: MprWaypoint[];
   structures: MprStructure[];
+  baseStructures?: MprBaseStructure[];
+  basePlayer?: string;
   units: MprUnit[];
+  ships?: MprShip[];
+  infantry?: MprInfantry[];
+  houseColors?: Record<string, { primaryColor: string; secondaryColor: string }>;
   hasMapPack: boolean;
   hasOverlayPack: boolean;
   hasEmbeddedPreview: boolean;
@@ -530,7 +560,40 @@ export function parseMprMap(fileContent: string): MprMapData {
   // Sort waypoints with spawn points 0..7 first
   waypoints.sort((a, b) => a.id - b.id);
 
-  // 8. Parse [STRUCTURES]
+  // 8. Parse [Base]
+  const baseStructures: MprBaseStructure[] = [];
+  const basePlayer = (getSectionMap('Base')['player'] || '').toLowerCase();
+  for (const line of getSectionLines('Base')) {
+    const idx = line.indexOf('=');
+    if (idx !== -1) {
+      const key = line.substring(0, idx).trim();
+      if (!isNaN(parseInt(key, 10))) {
+        const parts = line.substring(idx + 1).split(',');
+        if (parts.length >= 2) {
+          const name = parts[0].trim().toLowerCase();
+          const cellIdx = parseInt(parts[1].trim(), 10);
+          if (cellIdx >= 0 && cellIdx < 16384) {
+            const x = cellIdx % 128;
+            const y = Math.floor(cellIdx / 128);
+            baseStructures.push({ name, x, y });
+            if (name === 'weap') {
+              baseStructures.push({ name: 'weap2', x, y, isFake: true });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 9. Parse [STRUCTURES]
+  const FAKE_BUILDINGS_MAP: Record<string, string> = {
+    weaf: 'weap',
+    facf: 'fact',
+    domf: 'dome',
+    syrf: 'syrd',
+    spef: 'spen',
+  };
+
   const structures: MprStructure[] = [];
   for (const line of getSectionLines('Structures')) {
     const idx = line.indexOf('=');
@@ -539,25 +602,44 @@ export function parseMprMap(fileContent: string): MprMapData {
       if (data.length >= 4) {
         // Format: side, name, hp, cellIndex, angle, ...
         const side = data[0].trim();
-        const name = data[1].trim().toLowerCase();
+        let name = data[1].trim().toLowerCase();
+        let isFake = false;
+        if (FAKE_BUILDINGS_MAP[name]) {
+          name = FAKE_BUILDINGS_MAP[name];
+          isFake = true;
+        }
         const hp = parseInt(data[2].trim(), 10) || 256;
         const cellIdx = parseInt(data[3].trim(), 10);
         const angle = parseInt(data[4]?.trim() || '0', 10) || 0;
         if (cellIdx >= 0 && cellIdx < 16384) {
+          const x = cellIdx % 128;
+          const y = Math.floor(cellIdx / 128);
           structures.push({
             side,
             name,
             hp,
-            x: cellIdx % 128,
-            y: Math.floor(cellIdx / 128),
+            x,
+            y,
             angle,
+            isFake,
           });
+          if (name === 'weap') {
+            structures.push({
+              side,
+              name: 'weap2',
+              hp,
+              x,
+              y,
+              angle,
+              isFake,
+            });
+          }
         }
       }
     }
   }
 
-  // 9. Parse [UNITS]
+  // 10. Parse [UNITS]
   const units: MprUnit[] = [];
   for (const line of getSectionLines('Units')) {
     const idx = line.indexOf('=');
@@ -581,7 +663,116 @@ export function parseMprMap(fileContent: string): MprMapData {
     }
   }
 
-  // 10. Check for embedded [Preview] & [PreviewPack]
+  // 11. Parse [SHIPS]
+  const ships: MprShip[] = [];
+  for (const line of getSectionLines('Ships')) {
+    const idx = line.indexOf('=');
+    if (idx !== -1) {
+      const data = line.substring(idx + 1).split(',');
+      if (data.length >= 4) {
+        const side = data[0].trim();
+        const name = data[1].trim().toLowerCase();
+        const cellIdx = parseInt(data[3].trim(), 10);
+        const angle = parseInt(data[4]?.trim() || '0', 10) || 0;
+        if (cellIdx >= 0 && cellIdx < 16384) {
+          ships.push({
+            side,
+            name,
+            x: cellIdx % 128,
+            y: Math.floor(cellIdx / 128),
+            angle,
+          });
+        }
+      }
+    }
+  }
+
+  // 12. Parse [INFANTRY]
+  const infantry: MprInfantry[] = [];
+  for (const line of getSectionLines('Infantry')) {
+    const idx = line.indexOf('=');
+    if (idx !== -1) {
+      const data = line.substring(idx + 1).split(',');
+      if (data.length >= 5) {
+        const side = data[0].trim();
+        const name = data[1].trim().toLowerCase();
+        const cellIdx = parseInt(data[3].trim(), 10);
+        const subCell = parseInt(data[4]?.trim() || '0', 10) || 0;
+        const angle = parseInt(data[6]?.trim() || '0', 10) || 0;
+        if (cellIdx >= 0 && cellIdx < 16384) {
+          infantry.push({
+            side,
+            name,
+            x: cellIdx % 128,
+            y: Math.floor(cellIdx / 128),
+            subCell,
+            angle,
+          });
+        }
+      }
+    }
+  }
+
+  // 13. Parse House Colors & Remaps
+  const parseColorName = (colVal: number): string | null => {
+    switch (colVal) {
+      case 0: return 'Yellow';
+      case 1: return 'Blue';
+      case 2: return 'Red';
+      case 3: return 'Green';
+      case 4: return 'Orange';
+      case 5: return 'Gray';
+      case 6: return 'Teal';
+      case 7: return 'Brown';
+      case 8: return 'White';
+      case 9: return 'Black';
+      case 10: return 'FlamingBlue';
+      default: return null;
+    }
+  };
+
+  const houseColors: Record<string, { primaryColor: string; secondaryColor: string }> = {
+    spain: { primaryColor: 'Yellow', secondaryColor: 'Yellow' },
+    greece: { primaryColor: 'Blue', secondaryColor: 'Blue' },
+    ussr: { primaryColor: 'Red', secondaryColor: 'Red' },
+    england: { primaryColor: 'Green', secondaryColor: 'Green' },
+    ukraine: { primaryColor: 'Orange', secondaryColor: 'Orange' },
+    germany: { primaryColor: 'Gray', secondaryColor: 'Gray' },
+    france: { primaryColor: 'Teal', secondaryColor: 'Teal' },
+    turkey: { primaryColor: 'Brown', secondaryColor: 'Brown' },
+    special: { primaryColor: 'Yellow', secondaryColor: 'Yellow' },
+    neutral: { primaryColor: 'Yellow', secondaryColor: 'Yellow' },
+    goodguy: { primaryColor: 'Blue', secondaryColor: 'Blue' },
+    badguy: { primaryColor: 'Red', secondaryColor: 'Red' },
+    multi1: { primaryColor: 'Yellow', secondaryColor: 'Yellow' },
+    multi2: { primaryColor: 'Blue', secondaryColor: 'Blue' },
+    multi3: { primaryColor: 'Red', secondaryColor: 'Red' },
+    multi4: { primaryColor: 'Green', secondaryColor: 'Green' },
+    multi5: { primaryColor: 'Orange', secondaryColor: 'Orange' },
+    multi6: { primaryColor: 'Gray', secondaryColor: 'Gray' },
+    multi7: { primaryColor: 'Teal', secondaryColor: 'Teal' },
+    multi8: { primaryColor: 'Brown', secondaryColor: 'Brown' },
+  };
+
+  for (const house of Object.keys(houseColors)) {
+    const sMap = getSectionMap(house);
+    if (Object.keys(sMap).length > 0) {
+      const cur = { ...houseColors[house] };
+      const secCol = parseInt(sMap['secondarycolorscheme'] || '-1', 10);
+      if (!isNaN(secCol) && secCol !== -1) {
+        const c = parseColorName(secCol);
+        if (c) cur.secondaryColor = c;
+      }
+      const primCol = parseInt(sMap['color'] || sMap['colour'] || '-1', 10);
+      if (!isNaN(primCol) && primCol !== -1) {
+        const c = parseColorName(primCol);
+        if (c) cur.primaryColor = c;
+      }
+      houseColors[house] = cur;
+    }
+  }
+
+  // 14. Check for embedded [Preview] & [PreviewPack]
   const previewLines = getSectionLines('Preview');
   const previewPackLines = getSectionLines('PreviewPack');
   const hasEmbeddedPreview = previewPackLines.length > 0;
@@ -623,7 +814,12 @@ export function parseMprMap(fileContent: string): MprMapData {
     cells,
     waypoints,
     structures,
+    baseStructures,
+    basePlayer,
     units,
+    ships,
+    infantry,
+    houseColors,
     hasMapPack,
     hasOverlayPack,
     hasEmbeddedPreview,
