@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -38,12 +38,12 @@
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8"
   },
-  "description": "Red Alert 1 PNG to INI [PreviewPack] Generator",
+  "description": "RAnderer 2.0 - Red Alert 1 Map Studio & PreviewPack Generator",
   "author": "CO2-code",
   "main": "electron/main.cjs",
   "build": {
-    "appId": "com.co2code.ramaps-png-to-ini",
-    "productName": "RA1 PNG to INI",
+    "appId": "com.co2code.ra-renderer",
+    "productName": "RAnderer",
     "directories": {
       "output": "release"
     },
@@ -62,7 +62,7 @@
           ]
         }
       ],
-      "artifactName": "RA1-PNG-to-INI-${version}.${ext}"
+      "artifactName": "RAnderer-${version}.${ext}"
     }
   }
 }

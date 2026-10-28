@@ -19,9 +19,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ra1_studio_theme') as Theme | null;
       if (saved === 'dark' || saved === 'light') return saved;
-      return 'light'; // Default to clean light minimalist theme
+      return 'dark'; // Default to authentic Red Alert Dark Theme
     }
-    return 'light';
+    return 'dark';
   });
 
   useEffect(() => {

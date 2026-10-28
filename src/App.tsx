@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, X, Check, Compass, FolderKanban } from 'lucide-react';
-import { Header } from './components/Header';
+import { ShieldCheck, X, Check, Compass, FolderKanban, Sliders, ArrowLeft, HelpCircle } from 'lucide-react';
+import { LauncherHome } from './components/LauncherHome';
 import { ImageUploader } from './components/ImageUploader';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewViewport } from './components/PreviewViewport';
@@ -10,6 +10,7 @@ import { ReverseDecoderModal } from './components/ReverseDecoderModal';
 import { Ra1ResearchModal } from './components/Ra1ResearchModal';
 import { MprToPngModal } from './components/MprToPngModal';
 import { BatchMapModal } from './components/BatchMapModal';
+import { TinyPngModal } from './components/TinyPngModal';
 import { ConversionOptions, ConversionResult } from './types';
 import { convertImageToPreviewPack } from './lib/formatters';
 
@@ -28,6 +29,7 @@ const DEFAULT_OPTIONS: ConversionOptions = {
 };
 
 export default function App() {
+  const [currentView, setCurrentView] = useState<'launcher' | 'workspace'>('launcher');
   const [sourceCanvas, setSourceCanvas] = useState<HTMLCanvasElement | null>(null);
   const [currentFilename, setCurrentFilename] = useState<string>('');
   const [options, setOptions] = useState<ConversionOptions>(DEFAULT_OPTIONS);
@@ -45,6 +47,7 @@ export default function App() {
   const [isInjectorOpen, setIsInjectorOpen] = useState<boolean>(false);
   const [isMprModalOpen, setIsMprModalOpen] = useState<boolean>(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
+  const [isTinyPngOpen, setIsTinyPngOpen] = useState<boolean>(false);
 
   // Re-run conversion whenever sourceCanvas or options change
   useEffect(() => {
@@ -114,155 +117,217 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans selection:bg-red-600 selection:text-white transition-colors duration-150">
-      {/* Clean Minimalist Top Navigation Header */}
-      <Header
-        onOpenResearch={() => setIsResearchOpen(true)}
-        onOpenDecoder={() => setIsDecoderOpen(true)}
-        onOpenInjector={() => setIsInjectorOpen(true)}
-        onOpenMprToPng={() => setIsMprModalOpen(true)}
-        onOpenBatch={() => setIsBatchModalOpen(true)}
-      />
+    <div
+      className={`min-h-screen text-slate-100 flex flex-col font-sans selection:bg-red-600 selection:text-white transition-colors duration-150 ${
+        currentView === 'launcher' ? 'bg-[#07070a]' : 'bg-[#0d0305]'
+      }`}
+      style={
+        currentView !== 'launcher'
+          ? {
+              backgroundImage: `linear-gradient(rgba(12, 3, 6, 0.85), rgba(12, 3, 6, 0.90)), url('/assets/aistudio/dd-bkgnd_b2da9433.png')`,
+              backgroundRepeat: 'repeat',
+              backgroundSize: '864px 864px',
+              backgroundAttachment: 'fixed',
+            }
+          : undefined
+      }
+    >
 
-      {/* Main Dashboard Container */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Dashboard Title & Quick Action CTAs */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
-          <div>
-            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">
-              <span>CnCNet XNA Client</span>
-              <span aria-hidden="true">·</span>
-              <span>XCC Mixer LZO1X</span>
-              <span aria-hidden="true">·</span>
-              <span>Red Alert 1 & Tiberian Sun</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Map PreviewPack & INI Studio
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
-              Convert any PNG or battlefield render into authentic LZO1X 24-bit TrueColor or classic LCW Format80 INI sections ready to paste into your map files.
-            </p>
-          </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsBatchModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-red-600 hover:bg-slate-800 dark:hover:bg-red-700 text-white text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-            >
-              <FolderKanban className="w-4 h-4 text-amber-400 dark:text-white" />
-              <span>📁 Batch Map Studio</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsMprModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-            >
-              <Compass className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Battlefield View</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Upload Card Area */}
-        <ImageUploader
-          onImageLoaded={handleImageLoaded}
-          currentFilename={currentFilename}
-          onOpenMprModal={() => setIsMprModalOpen(true)}
+      {/* VIEW 1: AUTHENTIC RED ALERT LAUNCHER HOME SCREEN */}
+      {currentView === 'launcher' ? (
+        <LauncherHome
+          onOpenBatch={() => setIsBatchModalOpen(true)}
+          onEnterStudio={() => setCurrentView('workspace')}
+          onOpenMprToPng={() => setIsMprModalOpen(true)}
+          onOpenInjector={() => setIsInjectorOpen(true)}
+          onOpenDecoder={() => setIsDecoderOpen(true)}
+          onOpenResearch={() => setIsResearchOpen(true)}
+          onOpenTinyPng={() => setIsTinyPngOpen(true)}
         />
-
-        {/* Auto-Scaled Notice Banner if uploaded image was larger than 256px */}
-        {autoScaledNotice && (
-          <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
-            <div className="flex items-start gap-3.5 text-slate-700 dark:text-slate-200">
-              <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 shrink-0">
-                <ShieldCheck className="w-5 h-5" />
+      ) : (
+        /* VIEW 2: FULL GENERATOR STUDIO WORKSPACE */
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in">
+          {/* Dashboard Title & Quick Action CTAs */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-[#2b0808]">
+            <div>
+              <div className="flex items-center gap-2 text-xs text-red-500 font-mono uppercase tracking-wider mb-1">
+                <span>CnCNet XNA Client</span>
+                <span aria-hidden="true">&middot;</span>
+                <span>LZO1X 24-bit TrueColor</span>
+                <span aria-hidden="true">&middot;</span>
+                <span>Westwood Format80 LCW</span>
               </div>
-              <div className="space-y-1">
-                <div className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
-                  <span>Auto-Optimized to {autoScaledNotice.scaledW}×{autoScaledNotice.scaledH} (~800–1,100 lines)</span>
-                  <span className="text-[10px] font-mono text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/80 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700">
-                    CnCNet Standard
-                  </span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-['Rajdhani',sans-serif]">
+                PreviewPack &amp; Map Generator Studio
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                Convert any PNG image or battlefield map render into authentic compressed <code className="text-red-400 font-mono">[Preview]</code> and <code className="text-red-400 font-mono">[PreviewPack]</code> INI sections ready to inject into <code className="text-amber-400 font-mono">.MPR</code> maps.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(true)}
+                className="ra-menu-btn px-4 py-2 rounded text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer shadow-lg"
+              >
+                <FolderKanban className="w-4 h-4 text-amber-400" />
+                <span>Prepare Maps (Batch)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsMprModalOpen(true)}
+                className="px-3.5 py-2 rounded bg-[#161722] hover:bg-[#202230] border border-[#3b1218] text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <Compass className="w-4 h-4 text-emerald-400" />
+                <span>Battlefield View</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Upload Card Area */}
+          <ImageUploader
+            onImageLoaded={handleImageLoaded}
+            currentFilename={currentFilename}
+            onOpenMprModal={() => setIsMprModalOpen(true)}
+          />
+
+          {/* Auto-Scaled Notice Banner if uploaded image was larger than 256px */}
+          {autoScaledNotice && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-[#0e1812] border border-emerald-800/80 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+              <div className="flex items-start gap-3.5 text-slate-200">
+                <div className="p-2 rounded-xl bg-emerald-950/80 border border-emerald-700 text-emerald-400 shrink-0">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
-                <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed max-w-2xl">
-                  Uploaded image was <strong className="font-mono text-slate-900 dark:text-white">{autoScaledNotice.originalW}×{autoScaledNotice.originalH}</strong> (which would generate 23,000+ lines and lag in-game lobby downloads).
-                  It was automatically scaled down to <strong className="text-emerald-800 dark:text-emerald-300">≤ 256px</strong> for instant player downloads.
-                </p>
+                <div className="space-y-1">
+                  <div className="font-bold text-white text-sm flex items-center gap-2">
+                    <span>Auto-Optimized to {autoScaledNotice.scaledW}×{autoScaledNotice.scaledH} (~800–1,100 lines)</span>
+                    <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 border border-emerald-700 px-2 py-0.5 rounded font-bold">
+                      CnCNet Standard
+                    </span>
+                  </div>
+                  <p className="text-slate-300 text-xs leading-relaxed max-w-2xl font-mono">
+                    Uploaded image was <strong className="text-white">{autoScaledNotice.originalW}×{autoScaledNotice.originalH}</strong> (which would generate 23,000+ lines and lag in-game lobby downloads).
+                    It was automatically scaled down to <strong className="text-emerald-300">&le; 256px</strong> for instant player downloads.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setAutoScaledNotice(null)}
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Keep Optimized</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOptions((prev) => ({
+                      ...prev,
+                      width: autoScaledNotice.originalW,
+                      height: autoScaledNotice.originalH,
+                    }));
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[#151722] hover:bg-[#1e202f] border border-slate-700 text-slate-200 text-xs font-mono transition-colors cursor-pointer"
+                  title="Switch to full original resolution (creates 23k+ lines)"
+                >
+                  Full {autoScaledNotice.originalW}×{autoScaledNotice.originalH}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAutoScaledNotice(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
+          )}
 
-            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {/* All Settings in a Clean "Advanced Settings" Dropdown / Collapsible Card */}
+          <ControlPanel
+            options={options}
+            onChange={handleUpdateOptions}
+            sourceWidth={sourceCanvas?.width}
+            sourceHeight={sourceCanvas?.height}
+            defaultOpen={false}
+          />
+
+          {/* Live Reconstructed Preview Viewport with Large Data Metrics */}
+          <PreviewViewport
+            sourceCanvas={sourceCanvas}
+            result={result}
+          />
+
+          {/* Ready-to-Paste INI Code Viewer */}
+          <IniOutputViewer
+            result={result}
+            onOptimizeResolution={handleOptimizeToCncNetStandard}
+          />
+        </main>
+      )}
+
+      {/* Sticky Bottom Command Bar - Return to main menu (Not on the top) */}
+      {currentView === 'workspace' && (
+        <aside
+          aria-label="Workspace controls"
+          className="sticky bottom-0 z-30 w-full bg-[#080204]/95 backdrop-blur-md border-t border-[#3b0a0a] py-2.5 px-4 shadow-[0_-4px_25px_rgba(0,0,0,0.85)]"
+        >
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => setCurrentView('launcher')}
+              className="ra-menu-btn px-5 py-2 rounded text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer shadow-lg text-amber-200 hover:text-white"
+            >
+              <ArrowLeft className="w-4 h-4 text-amber-300" />
+              <span>Return to main menu</span>
+            </button>
+
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setAutoScaledNotice(null)}
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                onClick={() => setIsBatchModalOpen(true)}
+                className="ra-menu-btn px-3 py-1.5 rounded text-xs font-bold hidden sm:flex items-center gap-1.5 cursor-pointer"
               >
-                <Check className="w-3.5 h-3.5" />
-                <span>Keep Optimized</span>
+                <FolderKanban className="w-3.5 h-3.5 text-amber-400" />
+                <span>Prepare Maps</span>
               </button>
-
               <button
                 type="button"
-                onClick={() => {
-                  setOptions((prev) => ({
-                    ...prev,
-                    width: autoScaledNotice.originalW,
-                    height: autoScaledNotice.originalH,
-                  }));
-                }}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-mono transition-colors cursor-pointer"
-                title="Switch to full original resolution (creates 23k+ lines)"
+                onClick={() => setIsMprModalOpen(true)}
+                className="px-3 py-1.5 rounded bg-[#17080a] hover:bg-[#250d11] border border-[#4a1218] text-slate-300 hover:text-white text-xs font-mono font-semibold transition-colors cursor-pointer hidden sm:flex items-center gap-1.5"
               >
-                Full {autoScaledNotice.originalW}×{autoScaledNotice.originalH}
+                <Compass className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Battlefield View</span>
               </button>
-
               <button
                 type="button"
-                onClick={() => setAutoScaledNotice(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                title="Dismiss"
+                onClick={() => setIsTinyPngOpen(true)}
+                className="px-3 py-1.5 rounded bg-[#17080a] hover:bg-[#250d11] border border-[#4a1218] text-emerald-400 hover:text-emerald-300 text-xs font-mono font-semibold transition-colors cursor-pointer hidden md:flex items-center gap-1.5"
+                title="Open TinyPNG Image Compressor"
               >
-                <X className="w-4 h-4" />
+                <span>⚡ TinyPNG</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsResearchOpen(true)}
+                className="px-3 py-1.5 rounded bg-[#17080a] hover:bg-[#250d11] border border-[#4a1218] text-amber-300 hover:text-amber-200 text-xs font-mono font-semibold transition-colors cursor-pointer hidden sm:flex items-center gap-1.5"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Guide</span>
               </button>
             </div>
           </div>
-        )}
-
-        {/* All Settings in a Clean "Advanced Settings" Dropdown / Collapsible Card */}
-        <ControlPanel
-          options={options}
-          onChange={handleUpdateOptions}
-          sourceWidth={sourceCanvas?.width}
-          sourceHeight={sourceCanvas?.height}
-          defaultOpen={false}
-        />
-
-        {/* Live Reconstructed Preview Viewport with Large Data Metrics */}
-        <PreviewViewport
-          sourceCanvas={sourceCanvas}
-          result={result}
-        />
-
-        {/* Ready-to-Paste INI Code Viewer */}
-        <IniOutputViewer
-          result={result}
-          onOptimizeResolution={handleOptimizeToCncNetStandard}
-        />
-      </main>
-
-      {/* Clean Minimalist Footer */}
-      <footer className="border-t border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60 py-6 px-4 text-center text-xs text-slate-500 dark:text-slate-400 mt-12 transition-colors">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div>
-            xna-cncnet-client & XCC Mixer LZO1X 24-bit Engine · Command & Conquer Map Tool
-          </div>
-          <div className="text-[11px] text-slate-400 dark:text-slate-500">
-            Supports Red Alert 1, Tiberian Sun, and Red Alert 2 map previews
-          </div>
-        </div>
-      </footer>
+        </aside>
+      )}
 
       {/* Modals */}
       <Ra1ResearchModal
@@ -291,6 +356,11 @@ export default function App() {
       <BatchMapModal
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
+      />
+
+      <TinyPngModal
+        isOpen={isTinyPngOpen}
+        onClose={() => setIsTinyPngOpen(false)}
       />
     </div>
   );

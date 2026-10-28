@@ -91,17 +91,17 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm space-y-4 transition-colors">
+    <div className="bg-[#0c0d12] border border-[#331015] rounded-2xl p-6 sm:p-8 shadow-[0_4px_25px_rgba(0,0,0,0.7)] space-y-4 ra-radar-grid">
       {/* Central Large Drag & Drop Box with solid border and cloud upload icon */}
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`group relative rounded-xl p-8 sm:p-14 text-center cursor-pointer transition-all duration-200 border ${
+        className={`group relative rounded-xl p-8 sm:p-14 text-center cursor-pointer transition-all duration-200 border-2 border-dashed ${
           isDragging
-            ? 'border-red-500 bg-red-50/50 dark:bg-red-950/20 ring-2 ring-red-500/20'
-            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-50/90 dark:hover:bg-slate-800/70'
+            ? 'border-red-500 bg-[#1f0a0d] ring-2 ring-red-500/40'
+            : 'border-[#3a151b] hover:border-red-600/80 bg-[#07070a]/80 hover:bg-[#140b0e]'
         }`}
       >
         <input
@@ -117,17 +117,17 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         />
 
         <div className="flex flex-col items-center justify-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 shadow-xs group-hover:scale-105 group-hover:text-red-600 dark:group-hover:text-red-400 group-hover:border-red-200 dark:group-hover:border-red-900/60 transition-all">
+          <div className="w-16 h-16 rounded-2xl bg-[#141520] border border-[#4a151b] flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(220,38,38,0.25)] group-hover:scale-105 group-hover:text-red-400 group-hover:border-red-600 transition-all">
             <UploadCloud className="w-8 h-8" />
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white tracking-tight">
-              Drop your map image here, or <span className="text-red-600 dark:text-red-400 underline decoration-red-300 dark:decoration-red-600 underline-offset-4 group-hover:text-red-700 dark:group-hover:text-red-300">browse files</span>
+            <h3 className="text-base sm:text-lg font-bold font-['Rajdhani',sans-serif] uppercase tracking-wide text-white">
+              Drop your map image here, or <span className="text-red-500 underline decoration-red-700 underline-offset-4 group-hover:text-red-400">browse files</span>
             </h3>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-xs sm:text-sm text-slate-400 font-mono">
               Supports PNG, JPG, or WebP up to 10MB · Paste directly with{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 font-mono shadow-2xs">
+              <kbd className="px-1.5 py-0.5 rounded bg-[#1c1d29] border border-[#3d1217] text-xs text-red-400 font-mono">
                 Ctrl+V
               </kbd>
             </p>

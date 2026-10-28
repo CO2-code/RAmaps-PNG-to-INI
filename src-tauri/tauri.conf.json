@@ -1,15 +1,15 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RA1 PNG to INI",
-  "version": "0.1.0",
-  "identifier": "com.co2code.ramaps-png-to-ini",
+  "productName": "RAnderer",
+  "version": "2.0.0",
+  "identifier": "com.co2code.ra-renderer",
   "build": {
     "frontendDist": "../dist",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [
-      { "title": "RA1 PNG to INI", "width": 1400, "height": 900 }
+      { "title": "RAnderer 2.0", "width": 1400, "height": 900 }
     ],
     "security": { "csp": null }
   },

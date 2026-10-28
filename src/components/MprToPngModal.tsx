@@ -37,8 +37,14 @@ import {
   retryOriginalAssetsLoad,
   isOriginalAssetsLoaded,
 } from '../lib/raOriginalRenderer';
-import { SAMPLE_MPR_MAPS } from '../lib/sampleMprMaps';
 import { decodePreviewFromIni } from '../lib/formatters';
+import {
+  compressWithTinyPng,
+  getTinyPngApiKey,
+  formatFileSize,
+  canvasToBlob,
+} from '../lib/tinypng';
+import { TinyPngModal } from './TinyPngModal';
 
 interface MprToPngModalProps {
   isOpen: boolean;
@@ -55,8 +61,6 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
   const manualPackInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [activeSource, setActiveSource] = useState<'sample' | 'upload'>('sample');
-  const [selectedSampleId, setSelectedSampleId] = useState<string>('time_flies');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [rawFileText, setRawFileText] = useState<string>('');
 
@@ -89,12 +93,20 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
   const [isAdvancedLayersOpen, setIsAdvancedLayersOpen] = useState<boolean>(false);
 
-  // Load sample on open
+  // TinyPNG Compression States
+  const [autoCompressTinyPng, setAutoCompressTinyPng] = useState<boolean>(true);
+  const [isTinyPngProcessing, setIsTinyPngProcessing] = useState<boolean>(false);
+  const [tinyPngBanner, setTinyPngBanner] = useState<{
+    text: string;
+    type: 'success' | 'info' | 'error';
+  } | null>(null);
+  const [isTinyPngModalOpen, setIsTinyPngModalOpen] = useState<boolean>(false);
+  const [tinyPngInitialBlob, setTinyPngInitialBlob] = useState<Blob | undefined>(undefined);
+
+  // Reset parse error when closed
   useEffect(() => {
-    if (isOpen && !rawFileText) {
-      const sample = SAMPLE_MPR_MAPS.find((s) => s.id === selectedSampleId) || SAMPLE_MPR_MAPS[0];
-      setRawFileText(sample.content);
-      setUploadedFileName(sample.filename);
+    if (!isOpen) {
+      setParseError(null);
     }
   }, [isOpen]);
 
@@ -266,23 +278,12 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
   const handleFileUpload = (file: File) => {
     setUploadedFileName(file.name);
-    setActiveSource('upload');
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
       setRawFileText(text);
     };
     reader.readAsText(file);
-  };
-
-  const handleSelectSample = (sampleId: string) => {
-    setSelectedSampleId(sampleId);
-    setActiveSource('sample');
-    const sample = SAMPLE_MPR_MAPS.find((s) => s.id === sampleId);
-    if (sample) {
-      setUploadedFileName(sample.filename);
-      setRawFileText(sample.content);
-    }
   };
 
   const handleDownloadPng = async (scaleMultiplier: number = 1) => {
@@ -318,15 +319,76 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
       }
     }
 
+    const cleanBaseName = uploadedFileName.replace(/\.[^/.]+$/, '');
+    const engineTag = assetEngine === 'original' ? 'original_graphics' : 'tactical';
+    const baseDownloadName = `${cleanBaseName}_${engineTag}_${exportCanvas.width}x${exportCanvas.height}.png`;
+
+    // Automatic TinyPNG compression if enabled
+    const apiKey = getTinyPngApiKey();
+    if (autoCompressTinyPng) {
+      if (!apiKey) {
+        setTinyPngBanner({
+          text: 'TinyPNG key not set. Downloaded uncompressed PNG. Enter your free key to enable 50–70% auto-compression!',
+          type: 'info',
+        });
+      } else {
+        setIsTinyPngProcessing(true);
+        setTinyPngBanner(null);
+        try {
+          const blob = await canvasToBlob(exportCanvas);
+          const result = await compressWithTinyPng(blob, apiKey);
+          if (result.success && result.compressedBlob) {
+            const url = URL.createObjectURL(result.compressedBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${cleanBaseName}_${engineTag}_${exportCanvas.width}x${exportCanvas.height}_tinypng.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            setTinyPngBanner({
+              text: `Optimized with TinyPNG: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (-${result.savingsPercent}% saved!)`,
+              type: 'success',
+            });
+            setIsTinyPngProcessing(false);
+            return;
+          } else {
+            setTinyPngBanner({
+              text: `TinyPNG: ${result.error || 'Failed to compress'}. Downloaded standard PNG.`,
+              type: 'info',
+            });
+          }
+        } catch (err) {
+          console.warn('TinyPNG auto-compression error:', err);
+          setTinyPngBanner({
+            text: 'TinyPNG compression failed. Downloaded standard PNG.',
+            type: 'info',
+          });
+        } finally {
+          setIsTinyPngProcessing(false);
+        }
+      }
+    }
+
     const url = exportCanvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    const cleanBaseName = uploadedFileName.replace(/\.[^/.]+$/, '');
-    const engineTag = assetEngine === 'original' ? 'original_graphics' : 'tactical';
-    a.download = `${cleanBaseName}_${engineTag}_${exportCanvas.width}x${exportCanvas.height}.png`;
+    a.download = baseDownloadName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleOpenTinyPngCompressor = async () => {
+    if (!canvasRef.current) return;
+    try {
+      const blob = await canvasToBlob(canvasRef.current);
+      setTinyPngInitialBlob(blob);
+      setIsTinyPngModalOpen(true);
+    } catch {
+      setIsTinyPngModalOpen(true);
+    }
   };
 
   const handleSendToApp = () => {
@@ -344,20 +406,20 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-5xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] transition-colors">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-sm animate-fade-in">
+      <div className="relative w-full max-w-5xl bg-[#0c0d12] border border-[#3b0a0a] rounded-2xl shadow-[0_0_50px_rgba(180,0,0,0.4)] overflow-hidden flex flex-col max-h-[94vh] transition-colors">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#2b0808] bg-[#07070a]">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/70 border border-red-200 dark:border-red-700/60 text-red-600 dark:text-red-400 shadow-xs">
+            <div className="p-2.5 rounded-xl bg-red-950/80 border border-red-800/80 text-red-500 shadow-xs">
               <Compass className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-wide">
-                  Red Alert 1 <span className="text-red-600">*.MPR → *.PNG</span> Map Generator
+                <h2 className="text-base sm:text-lg font-bold font-['Rajdhani',sans-serif] uppercase text-white tracking-wide">
+                  Red Alert 1 <span className="text-red-500 font-mono">*.MPR &rarr; *.PNG</span> Map Generator
                 </h2>
-                <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-800 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded font-bold">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded font-bold">
                   {assetEngine === 'original' ? 'Original Westwood Assets' : 'Tactical Vector'}
                 </span>
               </div>
@@ -375,38 +437,16 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
           </button>
         </div>
 
-        {/* Top Control Bar: Source Switcher & Map Picker */}
-        <div className="p-3 sm:px-6 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-600 dark:text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-              Map Source:
-            </span>
-            <div className="flex items-center rounded-lg bg-white dark:bg-slate-900 p-0.5 border border-slate-200 dark:border-slate-800">
-              <button
-                onClick={() => {
-                  setActiveSource('sample');
-                  handleSelectSample(selectedSampleId);
-                }}
-                className={`px-3 py-1 rounded-md transition-colors font-medium cursor-pointer ${
-                  activeSource === 'sample'
-                    ? 'bg-red-600 text-white shadow-xs font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-neutral-200'
-                }`}
-              >
-                Sample Maps
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className={`px-3 py-1 rounded-md transition-colors font-medium flex items-center gap-1.5 cursor-pointer ${
-                  activeSource === 'upload'
-                    ? 'bg-red-600 text-white shadow-xs font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-neutral-200'
-                }`}
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Upload Custom .MPR</span>
-              </button>
-            </div>
+        {/* Top Control Bar: Map File Status & Upload */}
+        <div className="p-3 sm:px-6 bg-[#090a0f] border-b border-[#2b0808] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="ra-menu-btn px-3.5 py-1.5 rounded flex items-center gap-2 cursor-pointer text-xs font-bold tracking-wider"
+            >
+              <Upload className="w-3.5 h-3.5 text-amber-300" />
+              <span>{uploadedFileName ? 'Load Different Map (.MPR / .INI)' : 'Open Map File (.MPR / .INI)'}</span>
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -420,33 +460,15 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
             />
           </div>
 
-          {activeSource === 'sample' && (
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 font-mono text-[11px]">Pick Map:</span>
-              <select
-                value={selectedSampleId}
-                onChange={(e) => handleSelectSample(e.target.value)}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-neutral-200 font-medium focus:outline-none focus:border-red-500"
-              >
-                {SAMPLE_MPR_MAPS.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {activeSource === 'upload' && uploadedFileName && (
-            <div className="flex items-center gap-2 text-neutral-300 font-mono text-xs">
-              <span className="text-neutral-500">File:</span>
-              <span className="text-emerald-400 font-bold">{uploadedFileName}</span>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="text-neutral-400 hover:text-white underline text-[11px]"
-              >
-                Change
-              </button>
+          {uploadedFileName && (
+            <div className="flex items-center gap-2 text-slate-300 font-mono text-xs bg-[#120508] border border-[#3b0d12] px-3 py-1 rounded-md">
+              <span className="text-slate-500">Loaded:</span>
+              <span className="text-red-400 font-bold">{uploadedFileName}</span>
+              {mapData && (
+                <span className="text-[10px] text-amber-400 ml-1">
+                  ({mapData.theater})
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -998,23 +1020,115 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
 
             {/* Action Buttons */}
             <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2.5">
-              <button
-                onClick={() => handleDownloadPng(1)}
-                className="w-full px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>
-                  Download .PNG Map Image ({canvasRef.current?.width || 0}×{canvasRef.current?.height || 0})
-                </span>
-              </button>
+              {/* TinyPNG Status / Savings Banner */}
+              {tinyPngBanner && (
+                <div
+                  className={`p-2.5 rounded-xl border text-[11px] font-mono flex items-center justify-between gap-2 ${
+                    tinyPngBanner.type === 'success'
+                      ? 'bg-[#09150d] border-[#193a23] text-emerald-300'
+                      : tinyPngBanner.type === 'error'
+                      ? 'bg-red-950/80 border-red-800 text-red-300'
+                      : 'bg-[#18110b] border-[#3d270c] text-amber-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {tinyPngBanner.type === 'success' ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    )}
+                    <span>{tinyPngBanner.text}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTinyPngBanner(null)}
+                    className="text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* TinyPNG Auto-Compression Control */}
+              <div className="p-2.5 rounded-xl bg-black/60 border border-[#2b0808] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>Auto-compress with TinyPNG</span>
+                      {getTinyPngApiKey() ? (
+                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-1 py-0.2 rounded font-bold">
+                          READY
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-mono text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 py-0.2 rounded font-bold">
+                          FREE KEY
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Reduces PNG size by ~50–70% on download
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenTinyPngCompressor}
+                    className="text-[10px] font-mono text-amber-400 hover:text-white underline cursor-pointer"
+                    title="Configure API key or compress manually"
+                  >
+                    {getTinyPngApiKey() ? 'API Settings' : 'Set Free Key'}
+                  </button>
+                  <input
+                    type="checkbox"
+                    checked={autoCompressTinyPng}
+                    onChange={(e) => setAutoCompressTinyPng(e.target.checked)}
+                    className="w-4 h-4 rounded text-red-600 bg-neutral-950 border-neutral-700 cursor-pointer"
+                  />
+                </div>
+              </div>
 
               <button
-                onClick={() => handleDownloadPng(2)}
-                className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                onClick={() => handleDownloadPng(1)}
+                disabled={isTinyPngProcessing}
+                className="w-full px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
               >
-                <Maximize2 className="w-3.5 h-3.5 text-amber-500" />
-                <span>Download Double Resolution (2× Scale)</span>
+                {isTinyPngProcessing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>Compressing via TinyPNG...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    <span>
+                      Download .PNG Map Image ({canvasRef.current?.width || 0}×{canvasRef.current?.height || 0})
+                    </span>
+                  </>
+                )}
               </button>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleDownloadPng(2)}
+                  disabled={isTinyPngProcessing}
+                  className="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Double (2× Scale)</span>
+                </button>
+
+                <button
+                  onClick={handleOpenTinyPngCompressor}
+                  className="px-3 py-2 rounded-xl bg-black/60 hover:bg-[#1a080c] border border-[#3b0d13] text-amber-400 hover:text-amber-300 font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Open in standalone TinyPNG compressor"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>TinyPNG Tool</span>
+                </button>
+              </div>
 
               {onSendToGenerator && (
                 <button
@@ -1041,6 +1155,14 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Standalone TinyPNG Modal */}
+      <TinyPngModal
+        isOpen={isTinyPngModalOpen}
+        onClose={() => setIsTinyPngModalOpen(false)}
+        initialBlob={tinyPngInitialBlob}
+        initialFileName={`${uploadedFileName.replace(/\.[^/.]+$/, '') || 'battlefield'}.png`}
+      />
     </div>
   );
 };

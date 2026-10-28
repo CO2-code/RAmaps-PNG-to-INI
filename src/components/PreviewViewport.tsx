@@ -30,13 +30,13 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
 
   if (!sourceCanvas || !result) {
     return (
-      <div className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-500 dark:text-slate-400 space-y-3 shadow-sm transition-colors">
-        <div className="w-12 h-12 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500">
+      <div className="bg-[#0c0d12] border border-[#2f1015] rounded-2xl p-12 text-center text-slate-400 space-y-3 shadow-[0_4px_25px_rgba(0,0,0,0.6)] ra-radar-grid">
+        <div className="w-12 h-12 mx-auto rounded-xl bg-[#151620] border border-[#421217] flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(220,38,38,0.25)]">
           <Layers className="w-6 h-6" />
         </div>
         <div className="space-y-1">
-          <p className="text-base font-semibold text-slate-800 dark:text-slate-200">No Image Loaded</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Upload a PNG or map image above to preview conversion and generate INI code.</p>
+          <p className="text-base font-bold font-['Rajdhani',sans-serif] uppercase tracking-wider text-white">No Image Loaded</p>
+          <p className="text-xs text-slate-400 font-mono">Upload a PNG or map image above to preview conversion and generate INI code.</p>
         </div>
       </div>
     );
@@ -48,14 +48,14 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
   const isCncNet = result.encodingName.includes('CnCNet');
 
   return (
-    <div className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm space-y-6 transition-colors">
+    <div className="bg-[#0c0d12] border border-[#2f1015] rounded-2xl p-6 sm:p-7 shadow-[0_4px_25px_rgba(0,0,0,0.7)] space-y-6">
       {/* Section Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#2b0c10] pb-4">
         <div>
-          <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <span>Map Preview & Metrics</span>
+          <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2 font-['Rajdhani',sans-serif] uppercase">
+            <span>Map Preview &amp; Tactical Metrics</span>
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-400 mt-0.5 font-mono">
             Real-time decompressed preview as rendered by the game client
           </p>
         </div>
@@ -112,66 +112,66 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
       {/* Distinct Visual Chips/Badges for Map Statistics with Larger Fonts */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {/* Chip 1: Resolution */}
-        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+        <div className="bg-[#10111a] border border-[#2b2d3d] rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-sm">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider font-['Rajdhani',sans-serif]">
             <span>Map Grid</span>
-            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1.5 py-0.2 rounded">
+            <span className="text-[10px] font-mono text-slate-300 bg-[#1c1d29] border border-slate-700 px-1.5 py-0.2 rounded">
               px
             </span>
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 dark:text-white tracking-tight">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
             {result.targetWidth}×{result.targetHeight}
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="text-[11px] text-slate-400 font-mono">
             Source: {result.sourceWidth}×{result.sourceHeight}
           </div>
         </div>
 
         {/* Chip 2: Uncompressed Size */}
-        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+        <div className="bg-[#10111a] border border-[#2b2d3d] rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-sm">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider font-['Rajdhani',sans-serif]">
             <span>Raw Size</span>
-            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1.5 py-0.2 rounded">
+            <span className="text-[10px] font-mono text-slate-300 bg-[#1c1d29] border border-slate-700 px-1.5 py-0.2 rounded">
               {isCncNet ? '24-bit' : '8-bit'}
             </span>
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-mono text-slate-800 dark:text-slate-100 tracking-tight">
-            {rawKb} <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">KB</span>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-slate-200 tracking-tight">
+            {rawKb} <span className="text-sm font-semibold text-slate-400 font-mono">KB</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="text-[11px] text-slate-400 font-mono">
             {result.rawByteCount.toLocaleString()} bytes
           </div>
         </div>
 
         {/* Chip 3: LZO Compressed Size */}
-        <div className="bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/90 dark:border-emerald-800/60 rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
+        <div className="bg-[#0c1813] border border-emerald-800/80 rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-sm">
+          <div className="flex items-center justify-between text-[11px] font-bold text-emerald-400 uppercase tracking-wider font-['Rajdhani',sans-serif]">
             <span>LZO Compressed</span>
-            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-300/80 dark:border-emerald-700/60 px-1.5 py-0.2 rounded">
+            <span className="text-[10px] font-bold text-emerald-300 bg-emerald-950 border border-emerald-700 px-1.5 py-0.2 rounded">
               -{savingsPercent}%
             </span>
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-700 dark:text-emerald-400 tracking-tight">
-            {compKb} <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-500">KB</span>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-400 tracking-tight">
+            {compKb} <span className="text-sm font-semibold text-emerald-300 font-mono">KB</span>
           </div>
-          <div className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
+          <div className="text-[11px] text-emerald-400/80 font-mono">
             {result.compressedByteCount.toLocaleString()} bytes
           </div>
         </div>
 
         {/* Chip 4: INI Lines */}
-        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+        <div className="bg-[#10111a] border border-[#2b2d3d] rounded-xl p-3.5 sm:p-4 flex flex-col justify-between gap-1 shadow-sm">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider font-['Rajdhani',sans-serif]">
             <span>Line Count</span>
-            <span className="text-[10px] font-mono text-cyan-800 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800 px-1.5 py-0.2 rounded">
+            <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 border border-amber-800 px-1.5 py-0.2 rounded font-bold">
               {isCncNet ? 'CnCNet' : 'LCW'}
             </span>
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 dark:text-white tracking-tight">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-amber-400 tracking-tight">
             {result.lineCount.toLocaleString()}{' '}
-            <span className="text-xs font-normal text-slate-500 dark:text-slate-400">lines</span>
+            <span className="text-xs font-normal text-slate-400 font-mono">lines</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate" title={result.encodingName}>
+          <div className="text-[11px] text-slate-400 font-mono truncate" title={result.encodingName}>
             {result.encodingName.split(' ')[0]}
           </div>
         </div>

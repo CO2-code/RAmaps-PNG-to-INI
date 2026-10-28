@@ -1,4 +1,4 @@
-// Ultra-fast Electron wrapper for Red Alert 1 PNG to INI Map Studio
+// Ultra-fast Electron wrapper for RAnderer 2.0 - Red Alert 1 Map Studio & PreviewPack Generator
 // Uses Electron custom privileged 'app://' protocol to load files directly from disk
 // with ZERO network port binding, eliminating Windows Defender/Firewall socket inspection lag!
 
@@ -107,7 +107,7 @@ async function createWindow() {
     backgroundColor: '#0a0a0c',
     show: false,
     autoHideMenuBar: true,
-    title: 'Red Alert 1 PNG to INI Map Studio',
+    title: 'RAnderer 2.0',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

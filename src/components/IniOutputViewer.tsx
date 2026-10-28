@@ -91,20 +91,20 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm space-y-4 transition-colors">
+    <div className="bg-[#0c0d12] border border-[#2f1015] rounded-2xl p-6 sm:p-7 shadow-[0_4px_25px_rgba(0,0,0,0.7)] space-y-4">
       {/* Header and Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#2b0c10] pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+            <h3 className="text-base font-bold font-['Rajdhani',sans-serif] uppercase tracking-wide text-white">
               Ready-to-Paste INI Code
             </h3>
-            <span className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded">
+            <span className="text-xs font-mono font-bold text-red-400 bg-red-950/80 border border-red-800/80 px-2 py-0.5 rounded">
               {result.lineCount.toLocaleString()} lines
             </span>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Formatted with [Preview] and [PreviewPack] base64 blocks
+          <p className="text-xs text-slate-400 mt-0.5 font-mono">
+            Formatted with authentic [Preview] and [PreviewPack] base64 blocks
           </p>
         </div>
 
@@ -114,7 +114,7 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
             type="button"
             onClick={handleCopyAll}
             disabled={isCopying}
-            className="px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-red-600 hover:bg-slate-800 dark:hover:bg-red-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            className="ra-menu-btn px-4 py-1.5 rounded flex items-center gap-1.5 text-xs font-bold tracking-wider cursor-pointer"
           >
             {copiedType === 'all' ? (
               <>
@@ -133,7 +133,7 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
             type="button"
             onClick={handleCopyPreviewPackOnly}
             disabled={isCopying}
-            className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="px-3 py-1.5 rounded bg-[#161722] hover:bg-[#202230] border border-[#3b1218] text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             {copiedType === 'previewPack' ? (
               <>
@@ -151,7 +151,7 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
           <button
             type="button"
             onClick={handleDownloadIni}
-            className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="px-3 py-1.5 rounded-lg bg-[#0a0b12] hover:bg-slate-100 dark:hover:bg-slate-700 border border-[#33141a] text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
             title="Download preview snippet as an .ini file"
           >
             <Download className="w-3.5 h-3.5" />
@@ -184,12 +184,12 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
       </div>
 
       {/* Quick Paste Guide */}
-      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div className="p-3.5 rounded-xl bg-[#08090f] border border-[#2d0f14] text-xs text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <span className="flex items-center gap-2">
-          <span className="font-semibold text-slate-900 dark:text-white">How to use:</span>
-          <span>Paste these sections anywhere inside your <code className="font-mono text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1 py-0.5 rounded">.mpr</code> or <code className="font-mono text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1 py-0.5 rounded">.ini</code> map file.</span>
+          <span className="font-semibold text-slate-100">How to use:</span>
+          <span>Paste these sections anywhere inside your <code className="font-mono text-slate-200 ra-menu-btn border border-slate-200 dark:border-slate-600 px-1 py-0.5 rounded">.mpr</code> or <code className="font-mono text-slate-200 ra-menu-btn border border-slate-200 dark:border-slate-600 px-1 py-0.5 rounded">.ini</code> map file.</span>
         </span>
-        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">CnCNet & XCC compatible</span>
+        <span className="text-[11px] text-slate-400 font-medium">CnCNet & XCC compatible</span>
       </div>
     </div>
   );
