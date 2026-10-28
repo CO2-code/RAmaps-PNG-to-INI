@@ -53,7 +53,8 @@ jobs:
       - name: Locate and stage executable for artifact upload
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path "src-tauri/target/i686-pc-windows-msvc/release" -Filter "RA1 PNG to INI.exe" -File |
+          $exe = Get-ChildItem -Path "src-tauri/target/i686-pc-windows-msvc/release" -Filter "*.exe" -File |
+            Where-Object { $_.Name -notlike "*build_script*" } |
             Select-Object -First 1
           if (-not $exe) {
             Write-Host "Application executable not found. Executables in the expected release directory:"

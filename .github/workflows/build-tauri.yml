@@ -36,7 +36,24 @@ jobs:
       - name: Build exe
         run: npx tauri build --no-bundle
 
+      - name: Locate and stage executable
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "src-tauri/target/release" -Filter "*.exe" -File |
+            Where-Object { $_.Name -notlike "*build_script*" -and $_.Name -notlike "*deps*" } |
+            Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "Executables found in src-tauri/target/release:"
+            Get-ChildItem -Path "src-tauri/target/release" -Filter "*.exe" -File | Select-Object -ExpandProperty FullName
+            throw "Compiled Tauri executable was not found."
+          }
+          Write-Host "Found executable: $($exe.FullName) ($($exe.Length) bytes)"
+          New-Item -ItemType Directory -Force -Path "release-tauri" | Out-Null
+          Copy-Item $exe.FullName "release-tauri/RAnderer.exe" -Force
+          Get-Item "release-tauri/RAnderer.exe" | Select-Object FullName, Length
+
       - uses: actions/upload-artifact@v4
         with:
-          name: RA1-PNG-to-INI-tauri
-          path: src-tauri/target/release/ra1-png-to-ini.exe
+          name: RAnderer-tauri-win-x64
+          path: release-tauri/RAnderer.exe
+          if-no-files-found: error

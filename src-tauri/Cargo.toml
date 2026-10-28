@@ -1,7 +1,11 @@
 [package]
-name = "ra-renderer"
+name = "randerer"
 version = "2.0.0"
 edition = "2021"
+
+[[bin]]
+name = "RAnderer"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
