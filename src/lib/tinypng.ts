@@ -1,6 +1,6 @@
 /**
  * TinyPNG (Tinify) Compression Service for RAnderer 2.0
- * Uses the official TinyPNG API to optimize PNG battlefield renders & preview images.
+ * Uses official TinyPNG API with server-side proxy routes to bypass browser CORS & network blocks.
  */
 
 const STORAGE_KEY = 'ra_tinypng_api_key';
@@ -68,28 +68,95 @@ export async function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /**
- * Test if a TinyPNG API key is valid
+ * Helper to convert Blob to Base64 Data URL
  */
-export async function validateTinyPngApiKey(apiKey: string): Promise<{ valid: boolean; compressionCount?: number; error?: string }> {
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Failed to convert Blob to base64.'));
+      }
+    };
+    reader.onerror = () => reject(reader.error || new Error('FileReader error'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Helper to convert Base64 Data URL to Blob
+ */
+async function base64ToBlob(base64Data: string): Promise<Blob> {
+  const res = await fetch(base64Data);
+  return await res.blob();
+}
+
+/**
+ * Test if a TinyPNG API key is valid without consuming monthly compressions
+ */
+export async function validateTinyPngApiKey(
+  apiKey: string
+): Promise<{ valid: boolean; compressionCount?: number; error?: string }> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
-    return { valid: false, error: 'API key cannot be empty' };
+    return { valid: false, error: 'API key cannot be empty.' };
   }
 
-  // Create a minimal 1x1 transparent PNG blob for verification
-  const testCanvas = document.createElement('canvas');
-  testCanvas.width = 1;
-  testCanvas.height = 1;
-  const blob = await canvasToBlob(testCanvas);
-
+  // 1. Try server-side validation endpoint first (Bypasses CORS entirely)
   try {
-    const result = await compressWithTinyPng(blob, cleanKey);
-    if (result.success) {
-      return { valid: true, compressionCount: result.compressionCount };
+    const response = await fetch('/api/tinypng/validate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ apiKey: cleanKey }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        valid: Boolean(data.valid),
+        compressionCount: data.compressionCount,
+        error: data.error,
+      };
     }
-    return { valid: false, error: result.error || 'Failed to validate API key' };
   } catch (err) {
-    return { valid: false, error: err instanceof Error ? err.message : String(err) };
+    console.warn('Server-side validate route unreachable, attempting direct validation:', err);
+  }
+
+  // 2. Fallback: Direct call to Tinify (Works in Electron or CORS-free contexts)
+  try {
+    const authHeader = 'Basic ' + btoa('api:' + cleanKey);
+    const response = await fetch('https://api.tinify.com/shrink', {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'image/png',
+      },
+      body: '', // Empty body checks credentials without consuming an image compression
+    });
+
+    const countHeader = response.headers.get('compression-count');
+    const compressionCount = countHeader ? parseInt(countHeader, 10) : undefined;
+
+    if (response.status === 401) {
+      return { valid: false, error: 'Invalid API key. Please check your key at tinypng.com/developers' };
+    }
+    if (response.status === 400 || response.status === 201) {
+      return { valid: true, compressionCount };
+    }
+    if (response.status === 429) {
+      return { valid: false, error: 'TinyPNG monthly free quota exceeded (500 limit reached).' };
+    }
+
+    return { valid: false, error: `TinyPNG returned status ${response.status}` };
+  } catch (err) {
+    return {
+      valid: false,
+      error: err instanceof Error ? err.message : 'Unable to connect to TinyPNG API.',
+    };
   }
 }
 
@@ -114,31 +181,49 @@ export async function compressWithTinyPng(
   }
 
   const originalSize = imageBlob.size;
-  const authHeader = 'Basic ' + btoa('api:' + apiKey);
 
-  // Candidate endpoints depending on environment:
-  // 1. Local Vite dev proxy /api/tinypng/shrink (bypasses CORS in dev & fullstack)
-  // 2. Direct https://api.tinify.com/shrink (works in Electron & server environments)
-  // 3. Fallback CORS proxy for static web deployments (e.g. GitHub Pages)
-  const candidateEndpoints = [
-    '/api/tinypng/shrink',
-    'https://api.tinify.com/shrink',
-    `https://corsproxy.io/?url=${encodeURIComponent('https://api.tinify.com/shrink')}`,
-  ];
+  // 1. Try server-side compression endpoint first (Zero CORS issues)
+  try {
+    const imageBase64 = await blobToBase64(imageBlob);
 
-  let lastError = '';
+    const response = await fetch('/api/tinypng/compress', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        apiKey,
+        imageBase64,
+      }),
+    });
 
-  for (const endpoint of candidateEndpoints) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          'Content-Type': 'image/png',
-        },
-        body: imageBlob,
-      });
-
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.compressedBase64) {
+        const compressedBlob = await base64ToBlob(data.compressedBase64);
+        const compressedUrl = URL.createObjectURL(compressedBlob);
+        return {
+          success: true,
+          compressedBlob,
+          compressedUrl,
+          originalSize: data.originalSize || originalSize,
+          compressedSize: data.compressedSize || compressedBlob.size,
+          savedBytes: data.savedBytes || Math.max(0, originalSize - compressedBlob.size),
+          savingsPercent: data.savingsPercent || 0,
+          compressionCount: data.compressionCount,
+        };
+      } else {
+        return {
+          success: false,
+          originalSize,
+          compressedSize: originalSize,
+          savedBytes: 0,
+          savingsPercent: 0,
+          error: data.error || 'TinyPNG compression failed.',
+        };
+      }
+    } else {
+      const errData = await response.json().catch(() => null);
       if (response.status === 401) {
         return {
           success: false,
@@ -146,94 +231,109 @@ export async function compressWithTinyPng(
           compressedSize: originalSize,
           savedBytes: 0,
           savingsPercent: 0,
-          error: 'Invalid TinyPNG API key. Please check your key at tinypng.com/developers',
+          error: 'Invalid TinyPNG API key. Please check your credentials.',
         };
       }
-
-      if (response.status === 429) {
+      if (errData?.error) {
         return {
           success: false,
           originalSize,
           compressedSize: originalSize,
           savedBytes: 0,
           savingsPercent: 0,
-          error: 'TinyPNG monthly free quota exceeded (500 images/month limit reached).',
+          error: errData.error,
         };
       }
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        lastError = `TinyPNG error HTTP ${response.status}: ${errorText || response.statusText}`;
-        continue;
-      }
-
-      // Read compression count from response headers if available
-      const countHeader = response.headers.get('Compression-Count');
-      const compressionCount = countHeader ? parseInt(countHeader, 10) : undefined;
-
-      // TinyPNG returns JSON metadata with the download URL in output.url
-      const data = await response.json();
-      const outputUrl = data?.output?.url;
-
-      if (!outputUrl) {
-        lastError = 'TinyPNG did not return an output URL.';
-        continue;
-      }
-
-      // Fetch the compressed binary image from outputUrl
-      let downloadEndpoint = outputUrl;
-      // If we used the local proxy or CORS proxy, adapt download URL accordingly if needed
-      if (endpoint.startsWith('/api/tinypng')) {
-        downloadEndpoint = outputUrl.replace('https://api.tinify.com', '/api/tinypng');
-      }
-
-      let downloadRes = await fetch(downloadEndpoint, {
-        headers: {
-          Authorization: authHeader,
-        },
-      });
-
-      if (!downloadRes.ok) {
-        // Fallback to direct outputUrl
-        downloadRes = await fetch(outputUrl, {
-          headers: {
-            Authorization: authHeader,
-          },
-        });
-      }
-
-      if (!downloadRes.ok) {
-        lastError = `Failed to download compressed image from TinyPNG (${downloadRes.status})`;
-        continue;
-      }
-
-      const compressedBlob = await downloadRes.blob();
-      const compressedSize = compressedBlob.size;
-      const savedBytes = Math.max(0, originalSize - compressedSize);
-      const savingsPercent = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0;
-      const compressedUrl = URL.createObjectURL(compressedBlob);
-
-      return {
-        success: true,
-        compressedBlob,
-        compressedUrl,
-        originalSize,
-        compressedSize,
-        savedBytes,
-        savingsPercent,
-        compressionCount,
-      };
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
     }
+  } catch (err) {
+    console.warn('Server compression route failed or unavailable, trying direct:', err);
   }
 
-  return {
-    success: false,
-    originalSize,
-    compressedSize: originalSize,
-    savedBytes: 0,
-    savingsPercent: 0,
-    error: lastError || 'Network request to TinyPNG failed. Please verify your connection or API key.',
-  };
+  // 2. Direct fallback (for Electron desktop environment)
+  try {
+    const authHeader = 'Basic ' + btoa('api:' + apiKey);
+    const shrinkRes = await fetch('https://api.tinify.com/shrink', {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'image/png',
+      },
+      body: imageBlob,
+    });
+
+    if (shrinkRes.status === 401) {
+      return {
+        success: false,
+        originalSize,
+        compressedSize: originalSize,
+        savedBytes: 0,
+        savingsPercent: 0,
+        error: 'Invalid TinyPNG API key.',
+      };
+    }
+
+    if (!shrinkRes.ok) {
+      const text = await shrinkRes.text().catch(() => '');
+      return {
+        success: false,
+        originalSize,
+        compressedSize: originalSize,
+        savedBytes: 0,
+        savingsPercent: 0,
+        error: `TinyPNG error HTTP ${shrinkRes.status}: ${text}`,
+      };
+    }
+
+    const data = await shrinkRes.json();
+    const outputUrl = data?.output?.url;
+    if (!outputUrl) {
+      return {
+        success: false,
+        originalSize,
+        compressedSize: originalSize,
+        savedBytes: 0,
+        savingsPercent: 0,
+        error: 'TinyPNG returned invalid response structure.',
+      };
+    }
+
+    const downloadRes = await fetch(outputUrl, {
+      headers: { Authorization: authHeader },
+    });
+    if (!downloadRes.ok) {
+      return {
+        success: false,
+        originalSize,
+        compressedSize: originalSize,
+        savedBytes: 0,
+        savingsPercent: 0,
+        error: `Failed to download compressed image (${downloadRes.status})`,
+      };
+    }
+
+    const compressedBlob = await downloadRes.blob();
+    const compressedSize = compressedBlob.size;
+    const savedBytes = Math.max(0, originalSize - compressedSize);
+    const savingsPercent = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0;
+    const compressedUrl = URL.createObjectURL(compressedBlob);
+
+    return {
+      success: true,
+      compressedBlob,
+      compressedUrl,
+      originalSize,
+      compressedSize,
+      savedBytes,
+      savingsPercent,
+    };
+  } catch (directErr) {
+    return {
+      success: false,
+      originalSize,
+      compressedSize: originalSize,
+      savedBytes: 0,
+      savingsPercent: 0,
+      error: directErr instanceof Error ? directErr.message : 'TinyPNG network request failed.',
+    };
+  }
 }

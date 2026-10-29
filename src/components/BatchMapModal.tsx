@@ -96,19 +96,17 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
   const [autoExtractAuthorOnLoad, setAutoExtractAuthorOnLoad] = useState<boolean>(true);
   const [updateGameMode, setUpdateGameMode] = useState<boolean>(false);
   const [gameModeValue, setGameModeValue] = useState<string>('Custom');
-  const [updateMaxPlayer, setUpdateMaxPlayer] = useState<boolean>(false);
-  const [maxPlayerValue, setMaxPlayerValue] = useState<number>(2);
-  const [updateMinPlayer, setUpdateMinPlayer] = useState<boolean>(false);
-  const [minPlayerValue, setMinPlayerValue] = useState<number>(1);
-  const [injectPreviewsInPrepare, setInjectPreviewsInPrepare] = useState<boolean>(true);
+  const [updateMaxPlayer, setUpdateMaxPlayer] = useState<boolean>(true);
+  // 'inject_ini' = Internal [PreviewPack] in map (strictly NO companion PNG)
+  // 'export_png' = External companion PNG in previews/ (strips internal [PreviewPack] from map)
+  // 'none' = Neither
+  const [preparePreviewMode, setPreparePreviewMode] = useState<'inject_ini' | 'export_png' | 'none'>('inject_ini');
   const [prepareInjectFormat, setPrepareInjectFormat] = useState<'cncnet_lzo_24bit' | 'lcw_8bit'>('cncnet_lzo_24bit');
   const [prepareInjectSize, setPrepareInjectSize] = useState<number>(256);
-  const [exportPngInPrepare, setExportPngInPrepare] = useState<boolean>(true);
 
   // --- Inject Previews Settings (Standard action) ---
   const [injectFormat, setInjectFormat] = useState<'cncnet_lzo_24bit' | 'lcw_8bit'>('cncnet_lzo_24bit');
   const [injectSize, setInjectSize] = useState<number>(256);
-  const [alsoExportPng, setAlsoExportPng] = useState<boolean>(true);
 
   // --- Render PNGs Settings (Standard action) ---
   const [renderEngine, setRenderEngine] = useState<'original' | 'vector'>('original');
@@ -322,10 +320,6 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
       return;
     }
 
-    if (updateMinPlayer && updateMaxPlayer && minPlayerValue > maxPlayerValue) {
-      alert('MinPlayer cannot be greater than MaxPlayer.');
-      return;
-    }
 
     setIsProcessing(true);
     cancelRef.current = false;
@@ -384,18 +378,29 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
           }
 
           if (updateMaxPlayer) {
-            updates.maxPlayer = maxPlayerValue;
+            let catMax = 8;
+            if (item.category === '1v1') catMax = 2;
+            else if (item.category === '2v2') catMax = 4;
+            else if (item.category === '3v3') catMax = 6;
+            else if (item.category === '4v4') catMax = 8;
+            else if (map.waypoints && map.waypoints.length > 0) {
+              catMax = Math.min(8, Math.max(2, map.waypoints.length));
+            } else {
+              const basic = parseBasicSection(currentMapContent);
+              const origParsed = parseInt(basic.maxPlayer || '8', 10);
+              catMax = !isNaN(origParsed) && origParsed > 0 ? origParsed : 8;
+            }
+            updates.maxPlayer = catMax;
           }
 
-          if (updateMinPlayer) {
-            updates.minPlayer = minPlayerValue;
-          }
+          // Note: MinPlayer is intentionally untouched per requirements
 
           // Apply non-destructive INI modifications to [Basic]
           currentMapContent = updateIniBasicSection(currentMapContent, updates);
 
-          // 2. Optional Preview Injection in Prepare Maps
-          if (injectPreviewsInPrepare) {
+          // 2. Mutual Exclusive Previews: EITHER [PreviewPack] INI OR companion .PNG (never both!)
+          if (preparePreviewMode === 'inject_ini') {
+            // OPTION A: Injects [PreviewPack] into map file, strictly NO separate companion .png!
             const offCanvas = document.createElement('canvas');
             try {
               await preloadMapAssets(map);
@@ -428,7 +433,6 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
               );
             }
 
-            // Blit to visual mini-canvas for feedback
             if (progressCanvasRef.current && offCanvas.width > 0 && offCanvas.height > 0) {
               progressCanvasRef.current.width = 160;
               progressCanvasRef.current.height = 160;
@@ -455,28 +459,79 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
 
             currentMapContent = injectPreviewIntoMapFile(currentMapContent, previewResult.fullIniText);
             item.linesGenerated = previewResult.lineCount;
+            // Strictly NO companion PNG file
+            item.resultPngBlob = undefined;
+            item.resultPngDataUrl = undefined;
+          } else if (preparePreviewMode === 'export_png') {
+            // OPTION B: Export companion .PNG in previews/, STRIP any internal [PreviewPack] from the map!
+            currentMapContent = stripPreviewFromMapFile(currentMapContent);
+            item.linesGenerated = 0;
 
-            if (exportPngInPrepare) {
-              const blob = await new Promise<Blob | null>((resolve) => offCanvas.toBlob(resolve, 'image/png'));
-              if (blob) {
-                let finalBlob = blob;
-                const apiKey = getTinyPngApiKey();
-                if (batchTinyPngCompress && apiKey) {
-                  try {
-                    const compressed = await compressWithTinyPng(blob, apiKey);
-                    if (compressed.success && compressed.compressedBlob) {
-                      finalBlob = compressed.compressedBlob;
-                      setBatchTinyPngSavedBytes((prev) => prev + compressed.savedBytes);
-                      setBatchTinyPngCompressedCount((prev) => prev + 1);
-                    }
-                  } catch (cErr) {
-                    console.warn('TinyPNG batch error for item:', cErr);
-                  }
-                }
-                item.resultPngBlob = finalBlob;
-                item.resultPngDataUrl = offCanvas.toDataURL('image/png');
+            const offCanvas = document.createElement('canvas');
+            try {
+              await preloadMapAssets(map);
+              await renderMprOriginalAssets(
+                map,
+                {
+                  onlyDrawVisible: true,
+                  showWaypoints: true,
+                  showOre: true,
+                  showWalls: true,
+                  showStructures: true,
+                  scaleMultiplier: 1.0,
+                },
+                offCanvas
+              );
+            } catch (renderErr) {
+              renderMprToCanvas(
+                map,
+                {
+                  cellSize: 4,
+                  showOre: true,
+                  showWalls: true,
+                  showStructures: true,
+                  showWaypoints: true,
+                  showGrid: false,
+                  onlyDrawVisible: true,
+                },
+                offCanvas
+              );
+            }
+
+            if (progressCanvasRef.current && offCanvas.width > 0 && offCanvas.height > 0) {
+              progressCanvasRef.current.width = 160;
+              progressCanvasRef.current.height = 160;
+              const pCtx = progressCanvasRef.current.getContext('2d');
+              if (pCtx) {
+                pCtx.imageSmoothingEnabled = false;
+                pCtx.drawImage(offCanvas, 0, 0, 160, 160);
               }
             }
+
+            const blob = await new Promise<Blob | null>((resolve) => offCanvas.toBlob(resolve, 'image/png'));
+            if (blob) {
+              let finalBlob = blob;
+              const apiKey = getTinyPngApiKey();
+              if (batchTinyPngCompress && apiKey) {
+                try {
+                  const compressed = await compressWithTinyPng(blob, apiKey);
+                  if (compressed.success && compressed.compressedBlob) {
+                    finalBlob = compressed.compressedBlob;
+                    setBatchTinyPngSavedBytes((prev) => prev + compressed.savedBytes);
+                    setBatchTinyPngCompressedCount((prev) => prev + 1);
+                  }
+                } catch (cErr) {
+                  console.warn('TinyPNG batch error for item:', cErr);
+                }
+              }
+              item.resultPngBlob = finalBlob;
+              item.resultPngDataUrl = offCanvas.toDataURL('image/png');
+            }
+          } else {
+            // OPTION C: None (no previews added)
+            item.linesGenerated = 0;
+            item.resultPngBlob = undefined;
+            item.resultPngDataUrl = undefined;
           }
 
           item.resultMprText = currentMapContent;
@@ -544,13 +599,9 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
           item.resultMprText = mergedText;
           item.linesGenerated = previewResult.lineCount;
 
-          if (alsoExportPng) {
-            const blob = await new Promise<Blob | null>((resolve) => offCanvas.toBlob(resolve, 'image/png'));
-            if (blob) {
-              item.resultPngBlob = blob;
-              item.resultPngDataUrl = offCanvas.toDataURL('image/png');
-            }
-          }
+          // Injected previews into map, strictly NO companion PNG file
+          item.resultPngBlob = undefined;
+          item.resultPngDataUrl = undefined;
           item.status = 'done';
         }
 
@@ -702,10 +753,8 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
         updateGameMode,
         gameMode: updateGameMode ? gameModeValue : undefined,
         updateMaxPlayer,
-        maxPlayer: updateMaxPlayer ? maxPlayerValue : undefined,
-        updateMinPlayer,
-        minPlayer: updateMinPlayer ? minPlayerValue : undefined,
-        injectPreviewsInPrepare: selectedAction === 'prepare_maps' ? injectPreviewsInPrepare : undefined,
+        autoMaxPlayerFromCategory: updateMaxPlayer,
+        preparePreviewMode: selectedAction === 'prepare_maps' ? preparePreviewMode : undefined,
       },
       statistics: {
         totalMaps: items.length,
@@ -780,13 +829,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
     return items.some((i) => i.parsed && !i.editedMapName.trim());
   }, [items, selectedAction, updateMapName]);
 
-  const hasInvalidPlayerCount = useMemo(() => {
-    if (selectedAction !== 'prepare_maps') return false;
-    if (updateMinPlayer && updateMaxPlayer && minPlayerValue > maxPlayerValue) return true;
-    if (updateMinPlayer && minPlayerValue < 1) return true;
-    if (updateMaxPlayer && maxPlayerValue < 1) return true;
-    return false;
-  }, [selectedAction, updateMinPlayer, updateMaxPlayer, minPlayerValue, maxPlayerValue]);
+  const hasInvalidPlayerCount = false;
 
   if (!isOpen) return null;
 
@@ -1175,8 +1218,8 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                             />
                           </div>
 
-                          {/* MaxPlayer */}
-                          <div className="space-y-1">
+                          {/* Auto-set MaxPlayer from Category */}
+                          <div className="space-y-1 col-span-1 sm:col-span-2">
                             <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300">
                               <input
                                 type="checkbox"
@@ -1184,39 +1227,11 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                                 onChange={(e) => setUpdateMaxPlayer(e.target.checked)}
                                 className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-0"
                               />
-                              <span className="font-semibold text-[11px]">MaxPlayer</span>
+                              <span className="font-semibold text-[11px]">Auto-set <code>MaxPlayer=</code> from Map Category</span>
                             </label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={8}
-                              disabled={!updateMaxPlayer}
-                              value={maxPlayerValue}
-                              onChange={(e) => setMaxPlayerValue(parseInt(e.target.value, 10) || 1)}
-                              className="w-full bg-slate-50 dark:bg-slate-800 disabled:opacity-50 border border-slate-200 dark:border-slate-700 rounded p-1 text-xs font-mono text-slate-800 dark:text-white"
-                            />
-                          </div>
-
-                          {/* MinPlayer */}
-                          <div className="space-y-1">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300">
-                              <input
-                                type="checkbox"
-                                checked={updateMinPlayer}
-                                onChange={(e) => setUpdateMinPlayer(e.target.checked)}
-                                className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-0"
-                              />
-                              <span className="font-semibold text-[11px]">MinPlayer</span>
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={8}
-                              disabled={!updateMinPlayer}
-                              value={minPlayerValue}
-                              onChange={(e) => setMinPlayerValue(parseInt(e.target.value, 10) || 1)}
-                              className="w-full bg-slate-50 dark:bg-slate-800 disabled:opacity-50 border border-slate-200 dark:border-slate-700 rounded p-1 text-xs font-mono text-slate-800 dark:text-white"
-                            />
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono pl-5">
+                              1v1 &rarr; 2 &middot; 2v2 &rarr; 4 &middot; 3v3 &rarr; 6 &middot; 4v4 &rarr; 8 (MinPlayer left untouched)
+                            </div>
                           </div>
                         </div>
 
@@ -1232,26 +1247,95 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                       </div>
                     </div>
 
-                    {/* Row 3: Optional PreviewPack Generation */}
-                    <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+                    {/* Row 3: Preview Strategy (Strictly Either [PreviewPack] OR Companion PNG) */}
+                    <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-3">
                       <div className="flex items-center justify-between">
                         <label className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                           <ImageIcon className="w-3.5 h-3.5 text-purple-500" />
-                          Optional PreviewPack Generation &amp; Injection
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300">
-                          <input
-                            type="checkbox"
-                            checked={injectPreviewsInPrepare}
-                            onChange={(e) => setInjectPreviewsInPrepare(e.target.checked)}
-                            className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-0"
-                          />
-                          <span className="font-semibold text-[11px]">Inject [PreviewPack] into Maps</span>
+                          <span>Preview Strategy (Either [PreviewPack] OR .PNG Companion)</span>
                         </label>
                       </div>
 
-                      {injectPreviewsInPrepare && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {/* Option 1: Internal [PreviewPack] */}
+                        <label
+                          className={`p-2.5 rounded-lg border cursor-pointer flex flex-col justify-between transition-all ${
+                            preparePreviewMode === 'inject_ini'
+                              ? 'bg-purple-950/40 border-purple-600 text-white shadow-xs'
+                              : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <input
+                              type="radio"
+                              name="preparePreviewMode"
+                              checked={preparePreviewMode === 'inject_ini'}
+                              onChange={() => setPreparePreviewMode('inject_ini')}
+                              className="mt-0.5 text-purple-600 focus:ring-0"
+                            />
+                            <div>
+                              <div className="font-bold text-xs">Internal [PreviewPack]</div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                Injected into .MPR map (No companion PNG)
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Option 2: Companion .PNG */}
+                        <label
+                          className={`p-2.5 rounded-lg border cursor-pointer flex flex-col justify-between transition-all ${
+                            preparePreviewMode === 'export_png'
+                              ? 'bg-emerald-950/40 border-emerald-600 text-white shadow-xs'
+                              : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <input
+                              type="radio"
+                              name="preparePreviewMode"
+                              checked={preparePreviewMode === 'export_png'}
+                              onChange={() => setPreparePreviewMode('export_png')}
+                              className="mt-0.5 text-emerald-600 focus:ring-0"
+                            />
+                            <div>
+                              <div className="font-bold text-xs">Companion .PNG File</div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                Exported in previews/ (Strips INI preview)
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Option 3: None */}
+                        <label
+                          className={`p-2.5 rounded-lg border cursor-pointer flex flex-col justify-between transition-all ${
+                            preparePreviewMode === 'none'
+                              ? 'bg-red-950/40 border-red-600 text-white shadow-xs'
+                              : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <input
+                              type="radio"
+                              name="preparePreviewMode"
+                              checked={preparePreviewMode === 'none'}
+                              onChange={() => setPreparePreviewMode('none')}
+                              className="mt-0.5 text-red-600 focus:ring-0"
+                            />
+                            <div>
+                              <div className="font-bold text-xs">No Previews</div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                Leave maps as-is without preview changes
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* Sub-settings when Internal [PreviewPack] is selected */}
+                      {preparePreviewMode === 'inject_ini' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-200 dark:border-slate-800">
                           <div>
                             <span className="text-slate-600 dark:text-slate-400 block mb-1 font-semibold text-[11px]">
                               Encoding:
@@ -1280,57 +1364,48 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                               <option value={128}>128×128 px (Classic 1996)</option>
                             </select>
                           </div>
+                        </div>
+                      )}
 
-                          <div className="flex flex-col gap-2 pt-1 col-span-1 sm:col-span-3">
-                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
-                              <input
-                                type="checkbox"
-                                checked={exportPngInPrepare}
-                                onChange={(e) => setExportPngInPrepare(e.target.checked)}
-                                className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-0"
-                              />
-                              <span>Include .PNG previews in ZIP <code>previews/</code></span>
-                            </label>
-
-                            {exportPngInPrepare && (
-                              <div className="p-2.5 rounded-lg bg-black/40 border border-[#3b0d13] flex items-center justify-between gap-3 text-xs">
-                                <div className="flex items-center gap-2">
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                  <div>
-                                    <div className="font-bold text-white flex items-center gap-1.5">
-                                      <span>Auto-compress PNGs with TinyPNG</span>
-                                      {getTinyPngApiKey() ? (
-                                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-1 py-0.2 rounded font-bold">
-                                          API READY
-                                        </span>
-                                      ) : (
-                                        <span className="text-[9px] font-mono text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 py-0.2 rounded font-bold">
-                                          FREE KEY
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="text-[10px] text-slate-400 font-mono">
-                                      Reduces companion PNG sizes by ~50–70% before archiving in ZIP
-                                    </div>
-                                  </div>
+                      {/* Sub-settings when Companion .PNG is selected */}
+                      {preparePreviewMode === 'export_png' && (
+                        <div className="pt-1 border-t border-slate-200 dark:border-slate-800">
+                          <div className="p-2.5 rounded-lg bg-black/40 border border-[#3b0d13] flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <div>
+                                <div className="font-bold text-white flex items-center gap-1.5">
+                                  <span>Auto-compress PNGs with TinyPNG</span>
+                                  {getTinyPngApiKey() ? (
+                                    <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-1 py-0.2 rounded font-bold">
+                                      API READY
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-mono text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 py-0.2 rounded font-bold">
+                                      FREE KEY
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsTinyPngModalOpen(true)}
-                                    className="text-[10px] font-mono text-amber-400 hover:text-white underline cursor-pointer"
-                                  >
-                                    {getTinyPngApiKey() ? 'API Settings' : 'Set Free Key'}
-                                  </button>
-                                  <input
-                                    type="checkbox"
-                                    checked={batchTinyPngCompress}
-                                    onChange={(e) => setBatchTinyPngCompress(e.target.checked)}
-                                    className="rounded border-neutral-700 text-red-600 focus:ring-0 cursor-pointer"
-                                  />
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  Reduces companion PNG sizes by ~50–70% before archiving in previews/
                                 </div>
                               </div>
-                            )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setIsTinyPngModalOpen(true)}
+                                className="text-[10px] font-mono text-amber-400 hover:text-white underline cursor-pointer"
+                              >
+                                {getTinyPngApiKey() ? 'API Settings' : 'Set Free Key'}
+                              </button>
+                              <input
+                                type="checkbox"
+                                checked={batchTinyPngCompress}
+                                onChange={(e) => setBatchTinyPngCompress(e.target.checked)}
+                                className="rounded border-neutral-700 text-red-600 focus:ring-0 cursor-pointer"
+                              />
+                            </div>
                           </div>
                         </div>
                       )}
@@ -1366,16 +1441,8 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                       </select>
                     </div>
 
-                    <div className="flex items-end pb-1">
-                      <label className="flex items-center gap-2 cursor-pointer hover:text-slate-900 dark:hover:text-white text-slate-600 dark:text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={alsoExportPng}
-                          onChange={(e) => setAlsoExportPng(e.target.checked)}
-                          className="rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-0"
-                        />
-                        <span>Also generate .PNG previews in ZIP</span>
-                      </label>
+                    <div className="flex items-end pb-1 text-slate-500 dark:text-slate-400 text-[11px] font-mono">
+                      <span>Injected into .MPR map (No companion PNG)</span>
                     </div>
                   </div>
                 )}
@@ -1520,13 +1587,10 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
               </div>
 
               {/* Validation Warning Alert (if any) */}
-              {(hasEmptyMapName || hasInvalidPlayerCount) && (
+              {hasEmptyMapName && (
                 <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/80 flex items-center gap-3 text-xs text-amber-800 dark:text-amber-300">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <div>
-                    {hasEmptyMapName && <div>Warning: One or more maps have an empty Map Name. Please fill in names before running.</div>}
-                    {hasInvalidPlayerCount && <div>Warning: Player counts must be valid (MinPlayer &le; MaxPlayer, each &ge; 1).</div>}
-                  </div>
+                  <div>Warning: One or more maps have an empty Map Name. Please fill in names before running.</div>
                 </div>
               )}
 
@@ -1584,7 +1648,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                   {!isProcessing && !isComplete && (
                     <button
                       type="button"
-                      disabled={hasEmptyMapName || hasInvalidPlayerCount}
+                      disabled={hasEmptyMapName}
                       onClick={handleStartBatch}
                       className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-950/20 transition-all cursor-pointer"
                     >

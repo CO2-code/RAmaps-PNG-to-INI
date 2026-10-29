@@ -195,18 +195,18 @@ export const Ra1ResearchModal: React.FC<Ra1ResearchModalProps> = ({ isOpen, onCl
                 <p className="text-slate-300">
                   The fastest way to prepare multiple maps or an entire map pack for distribution:
                 </p>
-                <ul className="list-disc pl-5 space-y-1 text-slate-400">
+                <ul className="list-disc pl-5 space-y-1.5 text-slate-400">
                   <li>
-                    <strong className="text-slate-200">Metadata Editing:</strong> Change Map Name, Author, GameMode, and Min/Max players across all maps in one go.
+                    <strong className="text-slate-200">Category-Driven MaxPlayers:</strong> Automatically sets <code className="text-amber-300 font-mono">MaxPlayer=</code> from each map&rsquo;s assigned category (<code className="text-amber-300 font-mono">1v1 &rarr; 2</code>, <code className="text-amber-300 font-mono">2v2 &rarr; 4</code>, <code className="text-amber-300 font-mono">3v3 &rarr; 6</code>, <code className="text-amber-300 font-mono">4v4 &rarr; 8</code>). <code className="text-slate-400 font-mono">MinPlayer</code> is intentionally left untouched.
                   </li>
                   <li>
-                    <strong className="text-slate-200">Category Renaming:</strong> Add standard multiplayer player count prefixes like <code className="text-amber-300 font-mono">2_</code> for 1v1, <code className="text-amber-300 font-mono">4_</code> for 2v2, <code className="text-amber-300 font-mono">6_</code> for 3v3, and <code className="text-amber-300 font-mono">8_</code> for 4v4.
+                    <strong className="text-slate-200">Strictly Exclusive Previews (Either / Or):</strong> Maps never contain both internal <code className="text-red-400 font-mono">[PreviewPack]</code> and companion <code className="text-emerald-400 font-mono">.png</code> files simultaneously. Choose either internal INI previews OR external companion PNGs with existing INI previews cleanly stripped!
                   </li>
                   <li>
-                    <strong className="text-slate-200">Preview Injection:</strong> Drops matching PNG previews into map files automatically.
+                    <strong className="text-slate-200">Multiplayer Category Renaming:</strong> Prepends standardized CnCNet prefixes like <code className="text-amber-300 font-mono">2_</code> for 1v1, <code className="text-amber-300 font-mono">4_</code> for 2v2, <code className="text-amber-300 font-mono">6_</code> for 3v3, and <code className="text-amber-300 font-mono">8_</code> for 4v4.
                   </li>
                   <li>
-                    <strong className="text-slate-200">Safe ZIP Download:</strong> Automatically organizes processed maps and saves original backups in a convenient ZIP archive.
+                    <strong className="text-slate-200">Safe ZIP Organization:</strong> Outputs clean <code className="text-white font-mono">maps/</code>, <code className="text-white font-mono">previews/</code>, and a dedicated <code className="text-white font-mono">backup/originals/</code> archive so you never lose your source files.
                   </li>
                 </ul>
               </div>
@@ -301,6 +301,13 @@ export const Ra1ResearchModal: React.FC<Ra1ResearchModalProps> = ({ isOpen, onCl
                 <h4 className="text-white font-bold text-sm">Will my original files or map data get corrupted?</h4>
                 <p className="text-slate-300 text-xs">
                   No. RAnderer preserves all map triggers, terrain cells, structures, units, waypoints, and custom rules. It only updates the <code className="text-red-400 font-mono">[Basic]</code> metadata and <code className="text-red-400 font-mono">[PreviewPack]</code> sections. In the batch tool, a clean backup copy of your original files is always included in the ZIP archive.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#0f1118] border border-[#202330] space-y-1.5">
+                <h4 className="text-white font-bold text-sm">Should my map have both an internal [PreviewPack] and a companion .PNG preview?</h4>
+                <p className="text-slate-300 text-xs">
+                  No! Having both duplicates storage and increases map transfer size. In RAnderer Batch Studio, you choose strictly either <strong>Internal [PreviewPack]</strong> (injected directly into the <code className="text-amber-400 font-mono">.mpr</code> file with zero companion files) OR <strong>Companion .PNG</strong> (where any existing <code className="text-red-400 font-mono">[PreviewPack]</code> is cleanly stripped from the map to keep it ultra-compact, and the image is placed in the <code className="text-white font-mono">previews/</code> folder).
                 </p>
               </div>
 

@@ -2,6 +2,11 @@ name: Build Tauri EXE (small)
 
 on:
   workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -57,3 +62,9 @@ jobs:
           name: RAnderer-tauri-win-x64
           path: release-tauri/RAnderer.exe
           if-no-files-found: error
+
+      - name: Attach to GitHub Release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-tauri/RAnderer.exe
