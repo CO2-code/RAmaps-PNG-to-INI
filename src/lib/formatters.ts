@@ -333,32 +333,50 @@ export function decodePreviewFromIni(
 }
 
 /**
- * Injects or updates [Preview] and [PreviewPack] in an existing .mpr or .ini file
+ * Injects or updates [Preview] and [PreviewPack] in an existing .mpr or .ini file.
+ * Safely strips any existing [Preview] and [PreviewPack] sections (case-insensitive, CRLF safe)
+ * and places the updated block immediately after [Basic] or [Map].
  */
 export function injectPreviewIntoMapFile(
   mapFileText: string,
   previewBlockText: string
 ): string {
-  const previewRegex = /\[Preview\][\s\S]*?(?=\n\[|$)/i;
-  const previewPackRegex = /\[PreviewPack\][\s\S]*?(?=\n\[|$)/i;
+  if (!previewBlockText || !previewBlockText.trim()) {
+    return mapFileText;
+  }
 
-  let cleaned = mapFileText;
-  cleaned = cleaned.replace(previewRegex, '').replace(previewPackRegex, '').trim();
+  // Normalize line endings to \n for uniform parsing
+  const isCrlf = mapFileText.includes('\r\n');
+  const normalized = mapFileText.replace(/\r\n/g, '\n');
 
-  // Insert right after [Basic] or [Map]
-  const basicMatch = cleaned.match(/(\[Basic\][\s\S]*?\n)(?=\[|$)/i);
+  // Strip existing [Preview] and [PreviewPack] sections
+  // Each section starts with [Preview] or [PreviewPack] on its own line and ends before the next [Section] or EOF
+  const previewRegex = /^[ \t]*\[Preview\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*/gim;
+  const previewPackRegex = /^[ \t]*\[PreviewPack\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*/gim;
+
+  let cleaned = normalized.replace(previewRegex, '').replace(previewPackRegex, '').trim();
+
+  const formattedBlock = previewBlockText.trim();
+
+  // Find [Basic] section to insert right after it
+  const basicMatch = cleaned.match(/(^[ \t]*\[Basic\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*)/im);
   if (basicMatch && basicMatch.index !== undefined) {
     const insertPos = basicMatch.index + basicMatch[0].length;
-    return cleaned.slice(0, insertPos) + '\n' + previewBlockText + '\n\n' + cleaned.slice(insertPos);
+    const result = cleaned.slice(0, insertPos).trimEnd() + '\n\n' + formattedBlock + '\n\n' + cleaned.slice(insertPos).trimStart();
+    return isCrlf ? result.replace(/\n/g, '\r\n') : result;
   }
 
-  const mapMatch = cleaned.match(/(\[Map\][\s\S]*?\n)(?=\[|$)/i);
+  // Otherwise find [Map] section
+  const mapMatch = cleaned.match(/(^[ \t]*\[Map\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*)/im);
   if (mapMatch && mapMatch.index !== undefined) {
     const insertPos = mapMatch.index + mapMatch[0].length;
-    return cleaned.slice(0, insertPos) + '\n' + previewBlockText + '\n\n' + cleaned.slice(insertPos);
+    const result = cleaned.slice(0, insertPos).trimEnd() + '\n\n' + formattedBlock + '\n\n' + cleaned.slice(insertPos).trimStart();
+    return isCrlf ? result.replace(/\n/g, '\r\n') : result;
   }
 
-  return previewBlockText + '\n\n' + cleaned;
+  // Fallback: prepend to start
+  const result = formattedBlock + '\n\n' + cleaned;
+  return isCrlf ? result.replace(/\n/g, '\r\n') : result;
 }
 
 /**

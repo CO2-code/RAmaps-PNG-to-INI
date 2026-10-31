@@ -1,7 +1,37 @@
 /**
  * TinyPNG (Tinify) Compression Service for RAnderer 2.0
- * Uses official TinyPNG API with server-side proxy routes to bypass browser CORS & network blocks.
+ * Multi-layer architecture:
+ * 1. Electron Native IPC bridge (Direct Node https, Zero CORS, Win7 CA-safe)
+ * 2. Server-side proxy endpoints (/api/tinypng/*) for Express and Electron fallback server
+ * 3. Direct browser fetch fallback (for CORS-enabled contexts)
  */
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      isElectron?: boolean;
+      validateTinyPng?: (apiKey: string) => Promise<{
+        valid: boolean;
+        compressionCount?: number;
+        error?: string;
+      }>;
+      compressTinyPng?: (payload: {
+        apiKey: string;
+        imageBase64: string;
+      }) => Promise<{
+        success: boolean;
+        compressedBase64?: string;
+        originalSize?: number;
+        compressedSize?: number;
+        savedBytes?: number;
+        savingsPercent?: number;
+        compressionCount?: number;
+        error?: string;
+      }>;
+      exitApp?: () => Promise<void>;
+    };
+  }
+}
 
 const STORAGE_KEY = 'ra_tinypng_api_key';
 
@@ -104,7 +134,20 @@ export async function validateTinyPngApiKey(
     return { valid: false, error: 'API key cannot be empty.' };
   }
 
-  // 1. Try server-side validation endpoint first (Bypasses CORS entirely)
+  // 1. If running inside Electron desktop app, invoke native IPC bridge first
+  // Eliminates browser CORS, Windows 7 SSL certificate expiry, and network port issues!
+  if (typeof window !== 'undefined' && window.electronAPI?.validateTinyPng) {
+    try {
+      const ipcResult = await window.electronAPI.validateTinyPng(cleanKey);
+      if (ipcResult) {
+        return ipcResult;
+      }
+    } catch (ipcErr) {
+      console.warn('Electron IPC validate route failed, falling back to HTTP:', ipcErr);
+    }
+  }
+
+  // 2. Try server-side validation endpoint (bypasses browser CORS in Express and Electron fallback server)
   try {
     const response = await fetch('/api/tinypng/validate', {
       method: 'POST',
@@ -126,7 +169,7 @@ export async function validateTinyPngApiKey(
     console.warn('Server-side validate route unreachable, attempting direct validation:', err);
   }
 
-  // 2. Fallback: Direct call to Tinify (Works in Electron or CORS-free contexts)
+  // 3. Fallback: Direct call to Tinify API (works when CORS is disabled or in permissive environments)
   try {
     const authHeader = 'Basic ' + btoa('api:' + cleanKey);
     const response = await fetch('https://api.tinify.com/shrink', {
@@ -153,9 +196,16 @@ export async function validateTinyPngApiKey(
 
     return { valid: false, error: `TinyPNG returned status ${response.status}` };
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    if (errorMsg.toLowerCase().includes('failed to fetch') || errorMsg.toLowerCase().includes('networkerror')) {
+      return {
+        valid: false,
+        error: 'Network connection failed. Please verify your internet connection or firewall.',
+      };
+    }
     return {
       valid: false,
-      error: err instanceof Error ? err.message : 'Unable to connect to TinyPNG API.',
+      error: errorMsg || 'Unable to connect to TinyPNG API.',
     };
   }
 }
@@ -182,7 +232,45 @@ export async function compressWithTinyPng(
 
   const originalSize = imageBlob.size;
 
-  // 1. Try server-side compression endpoint first (Zero CORS issues)
+  // 1. If running inside Electron desktop app, invoke native IPC bridge first
+  // Zero CORS, zero payload size limits, zero TLS handshake issues on legacy Windows
+  if (typeof window !== 'undefined' && window.electronAPI?.compressTinyPng) {
+    try {
+      const imageBase64 = await blobToBase64(imageBlob);
+      const ipcResult = await window.electronAPI.compressTinyPng({
+        apiKey,
+        imageBase64,
+      });
+
+      if (ipcResult && ipcResult.success && ipcResult.compressedBase64) {
+        const compressedBlob = await base64ToBlob(ipcResult.compressedBase64);
+        const compressedUrl = URL.createObjectURL(compressedBlob);
+        return {
+          success: true,
+          compressedBlob,
+          compressedUrl,
+          originalSize: ipcResult.originalSize || originalSize,
+          compressedSize: ipcResult.compressedSize || compressedBlob.size,
+          savedBytes: ipcResult.savedBytes || Math.max(0, originalSize - compressedBlob.size),
+          savingsPercent: ipcResult.savingsPercent || 0,
+          compressionCount: ipcResult.compressionCount,
+        };
+      } else if (ipcResult && ipcResult.error) {
+        return {
+          success: false,
+          originalSize,
+          compressedSize: originalSize,
+          savedBytes: 0,
+          savingsPercent: 0,
+          error: ipcResult.error,
+        };
+      }
+    } catch (ipcErr) {
+      console.warn('Electron IPC compression failed, falling back to HTTP:', ipcErr);
+    }
+  }
+
+  // 2. Try server-side compression endpoint (Express server or Electron fallback server)
   try {
     const imageBase64 = await blobToBase64(imageBlob);
 
@@ -249,7 +337,7 @@ export async function compressWithTinyPng(
     console.warn('Server compression route failed or unavailable, trying direct:', err);
   }
 
-  // 2. Direct fallback (for Electron desktop environment)
+  // 3. Direct fallback (Direct call to Tinify)
   try {
     const authHeader = 'Basic ' + btoa('api:' + apiKey);
     const shrinkRes = await fetch('https://api.tinify.com/shrink', {
@@ -327,13 +415,16 @@ export async function compressWithTinyPng(
       savingsPercent,
     };
   } catch (directErr) {
+    const errorMsg = directErr instanceof Error ? directErr.message : String(directErr);
     return {
       success: false,
       originalSize,
       compressedSize: originalSize,
       savedBytes: 0,
       savingsPercent: 0,
-      error: directErr instanceof Error ? directErr.message : 'TinyPNG network request failed.',
+      error: errorMsg.toLowerCase().includes('failed to fetch')
+        ? 'Connection to TinyPNG failed. Please check your internet connection.'
+        : errorMsg || 'TinyPNG network request failed.',
     };
   }
 }

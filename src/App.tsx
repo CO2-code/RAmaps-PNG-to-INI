@@ -345,6 +345,8 @@ export default function App() {
         isOpen={isInjectorOpen}
         onClose={() => setIsInjectorOpen(false)}
         previewBlockText={result?.fullIniText || ''}
+        sourceCanvas={sourceCanvas}
+        conversionOptions={options}
       />
 
       <MprToPngModal
