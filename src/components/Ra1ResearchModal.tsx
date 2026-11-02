@@ -186,18 +186,46 @@ export const Ra1ResearchModal: React.FC<Ra1ResearchModalProps> = ({ isOpen, onCl
           {/* TAB 2: FEATURES */}
           {activeTab === 'features' && (
             <div className="space-y-4">
-              {/* Prepare Maps (Batch) */}
+              {/* ⚡ 1-Click Automatic Batch */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-[#21090d] via-[#140608] to-[#0a0305] border border-amber-600/60 space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+                <div className="flex items-center gap-2 text-sm font-bold text-amber-300 font-['Rajdhani',sans-serif] uppercase tracking-wider">
+                  <span className="text-amber-400 text-base">&#9889;</span>
+                  <span>Automatic Batch Maps (1-Click Pipeline)</span>
+                  <span className="text-[10px] font-mono text-amber-300 bg-amber-950/90 border border-amber-700/60 px-1.5 py-0.2 rounded font-bold uppercase ml-auto">
+                    New in v2.1
+                  </span>
+                </div>
+                <p className="text-slate-300">
+                  The ultimate 1-click solution for map makers. Simply select your folder of <code className="text-amber-400 font-mono">.mpr</code> maps &mdash; RAnderer checks all available files and automatically batches them:
+                </p>
+                <ul className="list-disc pl-5 space-y-1.5 text-slate-300">
+                  <li>
+                    <strong className="text-white">Under [Basic] section:</strong> Automatically writes <code className="text-emerald-400 font-mono">GameMode=Custom</code>, <code className="text-amber-300 font-mono">MaxPlayers=8</code> (dynamically set from map category: 1v1&rarr;2, 2v2&rarr;4, 3v3&rarr;6, 4v4&rarr;8), and <code className="text-emerald-400 font-mono">MinPlayers=1</code>.
+                  </li>
+                  <li>
+                    <strong className="text-white">Generates &amp; Injects Radar Previews:</strong> Renders authentic 24-bit TrueColor LZO radar previews and embeds both <code className="text-amber-300 font-mono">[Preview]</code> and <code className="text-amber-300 font-mono">[PreviewPack]</code> sections into each map file respectively.
+                  </li>
+                  <li>
+                    <strong className="text-white">Category Renaming &amp; Sanitization:</strong> Renames files with standard CnCNet category prefixes (<code className="text-amber-300 font-mono">2_</code>, <code className="text-amber-300 font-mono">4_</code>, etc.) and updates map titles with matching category tags (<code className="text-amber-300 font-mono">[2]</code>, <code className="text-amber-300 font-mono">[4]</code>).
+                  </li>
+                  <li>
+                    <strong className="text-white">Strict Mutual Exclusivity:</strong> Maps contain internal previews with strictly zero companion PNG clutter.
+                  </li>
+                </ul>
+              </div>
+
+              {/* Prepare Maps (Custom Studio) */}
               <div className="p-4 rounded-xl bg-[#14080b] border border-[#3b0d13] space-y-2">
                 <div className="flex items-center gap-2 text-sm font-bold text-white font-['Rajdhani',sans-serif] uppercase tracking-wider">
                   <FolderKanban className="w-4 h-4 text-amber-400" />
-                  <span>Prepare Maps (Batch Studio)</span>
+                  <span>Prepare Maps (Custom Batch Studio)</span>
                 </div>
                 <p className="text-slate-300">
-                  The fastest way to prepare multiple maps or an entire map pack for distribution:
+                  The customizable studio mode to prepare multiple maps with granular control over each field:
                 </p>
                 <ul className="list-disc pl-5 space-y-1.5 text-slate-400">
                   <li>
-                    <strong className="text-slate-200">Category-Driven MaxPlayers:</strong> Automatically sets <code className="text-amber-300 font-mono">MaxPlayer=</code> from each map&rsquo;s assigned category (<code className="text-amber-300 font-mono">1v1 &rarr; 2</code>, <code className="text-amber-300 font-mono">2v2 &rarr; 4</code>, <code className="text-amber-300 font-mono">3v3 &rarr; 6</code>, <code className="text-amber-300 font-mono">4v4 &rarr; 8</code>). <code className="text-slate-400 font-mono">MinPlayer</code> is intentionally left untouched.
+                    <strong className="text-slate-200">Category-Driven MaxPlayers:</strong> Automatically sets <code className="text-amber-300 font-mono">MaxPlayers=</code> from each map&rsquo;s assigned category (<code className="text-amber-300 font-mono">1v1 &rarr; 2</code>, <code className="text-amber-300 font-mono">2v2 &rarr; 4</code>, <code className="text-amber-300 font-mono">3v3 &rarr; 6</code>, <code className="text-amber-300 font-mono">4v4 &rarr; 8</code>).
                   </li>
                   <li>
                     <strong className="text-slate-200">Strictly Exclusive Previews (Either / Or):</strong> Maps never contain both internal <code className="text-red-400 font-mono">[PreviewPack]</code> and companion <code className="text-emerald-400 font-mono">.png</code> files simultaneously. Choose either internal INI previews OR external companion PNGs with existing INI previews cleanly stripped!

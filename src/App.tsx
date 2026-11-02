@@ -9,23 +9,23 @@ import { MapInjectorModal } from './components/MapInjectorModal';
 import { ReverseDecoderModal } from './components/ReverseDecoderModal';
 import { Ra1ResearchModal } from './components/Ra1ResearchModal';
 import { MprToPngModal } from './components/MprToPngModal';
-import { BatchMapModal } from './components/BatchMapModal';
+import { BatchMapModal, BatchAction } from './components/BatchMapModal';
 import { TinyPngModal } from './components/TinyPngModal';
 import { ConversionOptions, ConversionResult } from './types';
-import { convertImageToPreviewPack } from './lib/formatters';
+import { convertImageToPreviewPack, calculateMapHdDimensions } from './lib/formatters';
 
 const DEFAULT_OPTIONS: ConversionOptions = {
-  width: 256,
-  height: 256,
+  width: 512,
+  height: 512,
   palette: 'temperat',
   encoding: 'cncnet_lzo_24bit', // Default: xna-cncnet-client & XCC Mixer compatible!
   dithering: true,
   lineLength: 70,
   includePreviewSection: true,
-  compressionOptimization: 'balanced',
+  compressionOptimization: 'max',
   maintainAspectRatio: true,
-  colorNoiseReduction: true, // Auto-cleans microscopic noise to keep line counts compact
-  targetLineBudget: 1000,
+  colorNoiseReduction: false, // Pure 24-bit TrueColor RGB888, zero noise truncation for highest fidelity
+  targetLineBudget: undefined, // Highest HD settings regardless of line quantity
 };
 
 export default function App() {
@@ -47,6 +47,7 @@ export default function App() {
   const [isInjectorOpen, setIsInjectorOpen] = useState<boolean>(false);
   const [isMprModalOpen, setIsMprModalOpen] = useState<boolean>(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
+  const [batchInitialAction, setBatchInitialAction] = useState<BatchAction>('auto_batch');
   const [isTinyPngOpen, setIsTinyPngOpen] = useState<boolean>(false);
 
   // Re-run conversion whenever sourceCanvas or options change
@@ -67,45 +68,34 @@ export default function App() {
     setSourceCanvas(canvas);
     setCurrentFilename(filename);
 
-    const maxDim = Math.max(canvas.width, canvas.height);
-    if (maxDim > 256) {
-      const scale = 256 / maxDim;
-      const targetW = Math.max(16, Math.round(canvas.width * scale));
-      const targetH = Math.max(16, Math.round(canvas.height * scale));
-      setOptions((prev) => ({
-        ...prev,
-        width: targetW,
-        height: targetH,
-        targetLineBudget: 1000,
-      }));
-      setAutoScaledNotice({
-        originalW: canvas.width,
-        originalH: canvas.height,
-        scaledW: targetW,
-        scaledH: targetH,
-      });
-    } else {
-      setOptions((prev) => ({
-        ...prev,
-        width: canvas.width,
-        height: canvas.height,
-      }));
-      setAutoScaledNotice(null);
-    }
+    const { width: targetW, height: targetH } = calculateMapHdDimensions(canvas.width, canvas.height, 512);
+    setOptions((prev) => ({
+      ...prev,
+      width: targetW,
+      height: targetH,
+      colorNoiseReduction: false,
+      targetLineBudget: undefined,
+      compressionOptimization: 'max',
+    }));
+    setAutoScaledNotice({
+      originalW: canvas.width,
+      originalH: canvas.height,
+      scaledW: targetW,
+      scaledH: targetH,
+    });
   };
 
   const handleOptimizeToCncNetStandard = () => {
     if (!sourceCanvas) return;
-    const maxDim = Math.max(sourceCanvas.width, sourceCanvas.height);
-    const scale = Math.min(1, 256 / maxDim);
-    const targetW = Math.max(16, Math.round(sourceCanvas.width * scale));
-    const targetH = Math.max(16, Math.round(sourceCanvas.height * scale));
+    const { width: targetW, height: targetH } = calculateMapHdDimensions(sourceCanvas.width, sourceCanvas.height, 512);
     setOptions((prev) => ({
       ...prev,
       width: targetW,
       height: targetH,
       encoding: 'cncnet_lzo_24bit',
-      targetLineBudget: 1000,
+      colorNoiseReduction: false,
+      targetLineBudget: undefined,
+      compressionOptimization: 'max',
     }));
   };
 
@@ -137,7 +127,14 @@ export default function App() {
       {/* VIEW 1: AUTHENTIC RED ALERT LAUNCHER HOME SCREEN */}
       {currentView === 'launcher' ? (
         <LauncherHome
-          onOpenBatch={() => setIsBatchModalOpen(true)}
+          onOpenAutoBatch={() => {
+            setBatchInitialAction('auto_batch');
+            setIsBatchModalOpen(true);
+          }}
+          onOpenBatch={() => {
+            setBatchInitialAction('prepare_maps');
+            setIsBatchModalOpen(true);
+          }}
           onEnterStudio={() => setCurrentView('workspace')}
           onOpenMprToPng={() => setIsMprModalOpen(true)}
           onOpenInjector={() => setIsInjectorOpen(true)}
@@ -358,6 +355,7 @@ export default function App() {
       <BatchMapModal
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
+        initialAction={batchInitialAction}
       />
 
       <TinyPngModal

@@ -16,10 +16,12 @@ import {
   injectPreviewIntoMapFile,
   convertImageToPreviewPack,
   stripPreviewFromMapFile,
+  calculateMapHdDimensions,
+  extractMapSectionInfo,
 } from '../lib/formatters';
 import { parseMprMap, renderMprToCanvas, MprMapData } from '../lib/mprParser';
 import { renderMprOriginalAssets, preloadMapAssets } from '../lib/raOriginalRenderer';
-import { ConversionOptions } from '../types';
+import { ConversionOptions, PaletteId } from '../types';
 
 interface MapInjectorModalProps {
   isOpen: boolean;
@@ -59,7 +61,7 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
   const [customImageCanvas, setCustomImageCanvas] = useState<HTMLCanvasElement | null>(null);
   const [customImageName, setCustomImageName] = useState<string>('');
   const [encodingFormat, setEncodingFormat] = useState<'cncnet_lzo_24bit' | 'lcw_8bit'>('cncnet_lzo_24bit');
-  const [targetDim, setTargetDim] = useState<number>(256);
+  const [targetDim, setTargetDim] = useState<number>(512);
 
   // Sync mode if studio preview changes
   useEffect(() => {
@@ -140,7 +142,7 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
             mapData,
             {
               onlyDrawVisible: true,
-              showWaypoints: true,
+              showWaypoints: false, // Match RAFullMapPreviewGenerator: clean authentic battlefield without debug wireframes
               showOre: true,
               showWalls: true,
               showStructures: true,
@@ -156,7 +158,7 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
               showOre: true,
               showWalls: true,
               showStructures: true,
-              showWaypoints: true,
+              showWaypoints: false,
               showGrid: false,
               onlyDrawVisible: true,
             },
@@ -165,17 +167,30 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
         }
 
         setStatusMessage('Compressing into 24-bit LZO PreviewPack...');
+        const mapInfo = extractMapSectionInfo(rawMapText);
+        const mapW = mapData?.mapWidth || mapInfo.width || 64;
+        const mapH = mapData?.mapHeight || mapInfo.height || 64;
+        const { width: hdW, height: hdH } = calculateMapHdDimensions(mapW, mapH, targetDim);
+
+        const rawTheater = (mapData?.theater || mapInfo.theater || 'temperate').toLowerCase();
+        const palette: PaletteId =
+          rawTheater === 'snow' || rawTheater === 'winter'
+            ? 'snow'
+            : rawTheater === 'interior'
+            ? 'interior'
+            : 'temperat';
+
         const previewResult = convertImageToPreviewPack(offCanvas, {
-          width: targetDim,
-          height: targetDim,
-          palette: mapData.theater === 'snow' ? 'snow' : 'temperat',
+          width: hdW,
+          height: hdH,
+          palette,
           encoding: encodingFormat,
           lineLength: 70,
           includePreviewSection: true,
-          colorNoiseReduction: true,
-          targetLineBudget: 1000,
+          colorNoiseReduction: false,
+          targetLineBudget: undefined,
           dithering: false,
-          compressionOptimization: 'balanced',
+          compressionOptimization: 'max',
           maintainAspectRatio: true,
         });
 
@@ -187,17 +202,23 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
           throw new Error('Please select a PNG preview image first.');
         }
         setStatusMessage('Compressing custom image into PreviewPack...');
+        const { width: hdW, height: hdH } = calculateMapHdDimensions(
+          customImageCanvas.width,
+          customImageCanvas.height,
+          targetDim
+        );
+
         const previewResult = convertImageToPreviewPack(customImageCanvas, {
-          width: targetDim,
-          height: targetDim,
+          width: hdW,
+          height: hdH,
           palette: 'temperat',
           encoding: encodingFormat,
           lineLength: 70,
           includePreviewSection: true,
-          colorNoiseReduction: true,
-          targetLineBudget: 1000,
+          colorNoiseReduction: false,
+          targetLineBudget: undefined,
           dithering: true,
-          compressionOptimization: 'balanced',
+          compressionOptimization: 'max',
           maintainAspectRatio: true,
         });
 
@@ -394,15 +415,16 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span>Resolution:</span>
+                  <span>Max Resolution:</span>
                   <select
                     value={targetDim}
                     onChange={(e) => setTargetDim(parseInt(e.target.value, 10))}
                     className="bg-black border border-[#3b0d13] text-white px-2 py-1 rounded text-xs focus:outline-none"
                   >
-                    <option value={128}>128x128</option>
-                    <option value={192}>192x192</option>
-                    <option value={256}>256x256 (Standard)</option>
+                    <option value={512}>512 max px (Ultra Super HD)</option>
+                    <option value={256}>256 max px (CnCNet Full HD)</option>
+                    <option value={192}>192 max px</option>
+                    <option value={128}>128 max px (Classic)</option>
                   </select>
                 </div>
               </div>

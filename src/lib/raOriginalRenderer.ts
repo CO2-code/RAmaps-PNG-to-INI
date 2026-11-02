@@ -1194,10 +1194,30 @@ export async function renderMprOriginalAssets(
 
   ctx.imageSmoothingEnabled = false;
 
+  // Fill native canvas with the authentic base ground color for the theater to prevent voids
+  const tLower = (map.theater || 'temperate').toLowerCase();
+  ctx.fillStyle =
+    tLower === 'snow'
+      ? '#d8e4ea'
+      : tLower === 'interior'
+      ? '#262930'
+      : tLower === 'desert'
+      ? '#c49d59'
+      : tLower === 'winter'
+      ? '#4e543e'
+      : '#235c27';
+  ctx.fillRect(0, 0, fullWidth, fullHeight);
+
   // 1. Draw Ground Templates (Tiles)
   const clear1 = await assetLoader.getTemplate(map.theater, 'clear1');
   const tileImageData = ctx.createImageData(tileSize, tileSize);
   const tileBuf = tileImageData.data;
+
+  // Offscreen helper tile canvas for alpha-blended transparent tiles (coastal, cliffs, transitions)
+  const helperTileCanvas = document.createElement('canvas');
+  helperTileCanvas.width = tileSize;
+  helperTileCanvas.height = tileSize;
+  const helperCtx = helperTileCanvas.getContext('2d');
 
   const drawIndexedTile = (
     indexedPixels: Uint8Array,
@@ -1205,6 +1225,7 @@ export async function renderMprOriginalAssets(
     targetY: number,
     palette: Palette
   ) => {
+    let hasTransparent = false;
     for (let py = 0; py < tileSize; py++) {
       for (let px = 0; px < tileSize; px++) {
         const pIdx = py * tileSize + px;
@@ -1217,11 +1238,20 @@ export async function renderMprOriginalAssets(
           tileBuf[outIdx + 2] = color.b;
           tileBuf[outIdx + 3] = color.a;
         } else {
+          tileBuf[outIdx] = 0;
+          tileBuf[outIdx + 1] = 0;
+          tileBuf[outIdx + 2] = 0;
           tileBuf[outIdx + 3] = 0;
+          hasTransparent = true;
         }
       }
     }
-    ctx.putImageData(tileImageData, targetX, targetY);
+    if (hasTransparent && helperCtx) {
+      helperCtx.putImageData(tileImageData, 0, 0);
+      ctx.drawImage(helperTileCanvas, targetX, targetY);
+    } else {
+      ctx.putImageData(tileImageData, targetX, targetY);
+    }
   };
 
   for (let y = 0; y < 128; y++) {
@@ -1660,6 +1690,9 @@ export async function renderMprOriginalAssets(
     ctx.textBaseline = 'top';
 
     for (const wp of map.waypoints) {
+      // In Red Alert 1, only waypoints 0..7 are player starting spawn points
+      if (wp.id < 0 || wp.id > 7) continue;
+
       const wx = wp.x * tileSize;
       const wy = wp.y * tileSize;
 

@@ -47,6 +47,66 @@ export function chunkIntoIniLines(base64: string, lineLength: number = 70): stri
 }
 
 /**
+ * Ultra-high-fidelity multi-step downsampler.
+ * Downsamples in successive 2x halving steps until approaching target dimensions,
+ * preventing high-frequency moiré, aliasing, and muddy artifacts.
+ */
+export function downsampleCanvasHighQuality(
+  sourceCanvas: HTMLCanvasElement,
+  targetWidth: number,
+  targetHeight: number
+): HTMLCanvasElement {
+  let curW = sourceCanvas.width;
+  let curH = sourceCanvas.height;
+
+  if (curW <= targetWidth && curH <= targetHeight) {
+    const res = document.createElement('canvas');
+    res.width = targetWidth;
+    res.height = targetHeight;
+    const ctx = res.getContext('2d');
+    if (ctx) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
+    }
+    return res;
+  }
+
+  let currentCanvas: HTMLCanvasElement = sourceCanvas;
+
+  // Successively halve dimensions until approaching target
+  while (curW / 2 >= targetWidth && curH / 2 >= targetHeight) {
+    const nextW = Math.round(curW / 2);
+    const nextH = Math.round(curH / 2);
+    const stepCanvas = document.createElement('canvas');
+    stepCanvas.width = nextW;
+    stepCanvas.height = nextH;
+    const sCtx = stepCanvas.getContext('2d');
+    if (sCtx) {
+      sCtx.imageSmoothingEnabled = true;
+      sCtx.imageSmoothingQuality = 'high';
+      sCtx.drawImage(currentCanvas, 0, 0, nextW, nextH);
+    }
+    currentCanvas = stepCanvas;
+    curW = nextW;
+    curH = nextH;
+  }
+
+  // Final step directly to exact target width and height
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = targetWidth;
+  finalCanvas.height = targetHeight;
+  const fCtx = finalCanvas.getContext('2d');
+  if (fCtx) {
+    fCtx.imageSmoothingEnabled = true;
+    fCtx.imageSmoothingQuality = 'high';
+    fCtx.drawImage(currentCanvas, 0, 0, targetWidth, targetHeight);
+  }
+
+  return finalCanvas;
+}
+
+/**
  * Converts an HTML Image or Canvas into Red Alert 1 [Preview] and [PreviewPack] INI sections
  */
 export function convertImageToPreviewPack(
@@ -76,7 +136,33 @@ export function convertImageToPreviewPack(
 
   offCtx.imageSmoothingEnabled = true;
   offCtx.imageSmoothingQuality = 'high';
-  offCtx.drawImage(canvas, 0, 0, width, height);
+
+  if (options.maintainAspectRatio && canvas.width > 0 && canvas.height > 0) {
+    const srcAspect = canvas.width / canvas.height;
+    const dstAspect = width / height;
+    // If aspect ratios differ by more than 3%, letterbox / center to avoid squashing
+    if (Math.abs(srcAspect - dstAspect) > 0.03) {
+      offCtx.fillStyle = '#000000';
+      offCtx.fillRect(0, 0, width, height);
+      let renderW = width;
+      let renderH = height;
+      if (srcAspect > dstAspect) {
+        renderH = Math.max(1, Math.round(width / srcAspect));
+      } else {
+        renderW = Math.max(1, Math.round(height * srcAspect));
+      }
+      const offsetX = Math.round((width - renderW) / 2);
+      const offsetY = Math.round((height - renderH) / 2);
+      const resampled = downsampleCanvasHighQuality(canvas, renderW, renderH);
+      offCtx.drawImage(resampled, offsetX, offsetY);
+    } else {
+      const resampled = downsampleCanvasHighQuality(canvas, width, height);
+      offCtx.drawImage(resampled, 0, 0);
+    }
+  } else {
+    const resampled = downsampleCanvasHighQuality(canvas, width, height);
+    offCtx.drawImage(resampled, 0, 0);
+  }
 
   const srcImageData = offCtx.getImageData(0, 0, width, height);
   const pal = PALETTES[paletteId]?.colors || PALETTES.temperat.colors;
@@ -345,47 +431,125 @@ export function injectPreviewIntoMapFile(
     return mapFileText;
   }
 
-  // Normalize line endings to \n for uniform parsing
   const isCrlf = mapFileText.includes('\r\n');
-  const normalized = mapFileText.replace(/\r\n/g, '\n');
+  const nl = isCrlf ? '\r\n' : '\n';
+  const rawLines = mapFileText.replace(/\r\n/g, '\n').split('\n');
 
-  // Strip existing [Preview] and [PreviewPack] sections
-  // Each section starts with [Preview] or [PreviewPack] on its own line and ends before the next [Section] or EOF
-  const previewRegex = /^[ \t]*\[Preview\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*/gim;
-  const previewPackRegex = /^[ \t]*\[PreviewPack\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*/gim;
-
-  let cleaned = normalized.replace(previewRegex, '').replace(previewPackRegex, '').trim();
-
-  const formattedBlock = previewBlockText.trim();
-
-  // Find [Basic] section to insert right after it
-  const basicMatch = cleaned.match(/(^[ \t]*\[Basic\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*)/im);
-  if (basicMatch && basicMatch.index !== undefined) {
-    const insertPos = basicMatch.index + basicMatch[0].length;
-    const result = cleaned.slice(0, insertPos).trimEnd() + '\n\n' + formattedBlock + '\n\n' + cleaned.slice(insertPos).trimStart();
-    return isCrlf ? result.replace(/\n/g, '\r\n') : result;
+  // 1. Strip existing [Preview] and [PreviewPack] line by line safely
+  let skipping = false;
+  const cleanedLines: string[] = [];
+  for (const line of rawLines) {
+    const trimmed = line.trim();
+    if (/^\[\s*(Preview|PreviewPack)\s*\]$/i.test(trimmed)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (/^\[\s*[^\]]+\s*\]$/i.test(trimmed)) {
+        skipping = false;
+        cleanedLines.push(line);
+      }
+      continue;
+    }
+    cleanedLines.push(line);
   }
 
-  // Otherwise find [Map] section
-  const mapMatch = cleaned.match(/(^[ \t]*\[Map\][^\n]*\n(?:(?![ \t]*\[)[\s\S])*)/im);
-  if (mapMatch && mapMatch.index !== undefined) {
-    const insertPos = mapMatch.index + mapMatch[0].length;
-    const result = cleaned.slice(0, insertPos).trimEnd() + '\n\n' + formattedBlock + '\n\n' + cleaned.slice(insertPos).trimStart();
-    return isCrlf ? result.replace(/\n/g, '\r\n') : result;
+  const previewLines = previewBlockText.replace(/\r\n/g, '\n').trim().split('\n');
+
+  // 2. Locate [Basic] section end (where the next section starts, or EOF)
+  let basicHeaderIdx = -1;
+  let basicEndIdx = -1;
+
+  for (let i = 0; i < cleanedLines.length; i++) {
+    const trimmed = cleanedLines[i].trim();
+    if (/^\[\s*Basic\s*\]$/i.test(trimmed)) {
+      basicHeaderIdx = i;
+      continue;
+    }
+    if (basicHeaderIdx !== -1 && /^\[\s*[^\]]+\s*\]$/i.test(trimmed)) {
+      basicEndIdx = i;
+      break;
+    }
+  }
+  if (basicHeaderIdx !== -1 && basicEndIdx === -1) {
+    basicEndIdx = cleanedLines.length;
   }
 
-  // Fallback: prepend to start
-  const result = formattedBlock + '\n\n' + cleaned;
-  return isCrlf ? result.replace(/\n/g, '\r\n') : result;
+  if (basicEndIdx !== -1) {
+    // Insert [Preview] & [PreviewPack] directly after [Basic] section ends
+    const outputLines = [
+      ...cleanedLines.slice(0, basicEndIdx),
+      '',
+      ...previewLines,
+      '',
+      ...cleanedLines.slice(basicEndIdx),
+    ];
+    return outputLines.join(nl);
+  }
+
+  // 3. Otherwise try inserting after [Map]
+  let mapHeaderIdx = -1;
+  let mapEndIdx = -1;
+
+  for (let i = 0; i < cleanedLines.length; i++) {
+    const trimmed = cleanedLines[i].trim();
+    if (/^\[\s*Map\s*\]$/i.test(trimmed)) {
+      mapHeaderIdx = i;
+      continue;
+    }
+    if (mapHeaderIdx !== -1 && /^\[\s*[^\]]+\s*\]$/i.test(trimmed)) {
+      mapEndIdx = i;
+      break;
+    }
+  }
+  if (mapHeaderIdx !== -1 && mapEndIdx === -1) {
+    mapEndIdx = cleanedLines.length;
+  }
+
+  if (mapEndIdx !== -1) {
+    const outputLines = [
+      ...cleanedLines.slice(0, mapEndIdx),
+      '',
+      ...previewLines,
+      '',
+      ...cleanedLines.slice(mapEndIdx),
+    ];
+    return outputLines.join(nl);
+  }
+
+  // Fallback: prepend at beginning
+  return [...previewLines, '', ...cleanedLines].join(nl);
 }
 
 /**
  * Strips [Preview] and [PreviewPack] sections from map file text
  */
 export function stripPreviewFromMapFile(mapFileText: string): string {
-  const previewRegex = /\[Preview\][\s\S]*?(?=\n\[|$)/i;
-  const previewPackRegex = /\[PreviewPack\][\s\S]*?(?=\n\[|$)/i;
-  return mapFileText.replace(previewRegex, '').replace(previewPackRegex, '').trim() + '\n';
+  if (!mapFileText) return '';
+  const isCrlf = mapFileText.includes('\r\n');
+  const nl = isCrlf ? '\r\n' : '\n';
+  const rawLines = mapFileText.replace(/\r\n/g, '\n').split('\n');
+
+  let skipping = false;
+  const cleanedLines: string[] = [];
+
+  for (const line of rawLines) {
+    const trimmed = line.trim();
+    if (/^\[\s*(Preview|PreviewPack)\s*\]$/i.test(trimmed)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (/^\[\s*[^\]]+\s*\]$/i.test(trimmed)) {
+        skipping = false;
+        cleanedLines.push(line);
+      }
+      continue;
+    }
+    cleanedLines.push(line);
+  }
+
+  return cleanedLines.join(nl) + nl;
 }
 
 /**
@@ -423,3 +587,86 @@ export function calculateDimensionsForLineBudget(
 
   return { width: w, height: h };
 }
+
+/**
+ * Calculates HD preview dimensions (width & height) from the map's [Map] Width and Height.
+ * Preserves the exact aspect ratio of the map, scaling the largest dimension up to maxSize (default 256),
+ * and rounds both dimensions to even numbers for clean pixel alignment and optimal LZO block compression.
+ *
+ * Example: Width=111, Height=28, maxSize=256 -> { width: 256, height: 64 }
+ */
+export function calculateMapHdDimensions(
+  mapWidth: number,
+  mapHeight: number,
+  maxSize: number = 256
+): { width: number; height: number } {
+  const safeW = Number(mapWidth) > 0 ? Number(mapWidth) : 64;
+  const safeH = Number(mapHeight) > 0 ? Number(mapHeight) : 64;
+  const safeMax = maxSize > 0 ? maxSize : 256;
+
+  const maxDim = Math.max(safeW, safeH);
+  const scale = safeMax / maxDim;
+
+  // Scale dimensions proportionally directly to the closest even integers (for clean graphics & LZO compression)
+  let targetW = Math.max(16, Math.round((safeW * scale) / 2) * 2);
+  let targetH = Math.max(16, Math.round((safeH * scale) / 2) * 2);
+
+  // Clamp within safeMax while keeping even
+  if (targetW > safeMax) targetW = safeMax % 2 === 0 ? safeMax : safeMax - 1;
+  if (targetH > safeMax) targetH = safeMax % 2 === 0 ? safeMax : safeMax - 1;
+
+  targetW = Math.max(16, targetW);
+  targetH = Math.max(16, targetH);
+
+  return { width: targetW, height: targetH };
+}
+
+/**
+ * Extracts Map section info (Width, Height, X, Y, Theater) directly from map text
+ */
+export function extractMapSectionInfo(mapText: string): {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  theater: string;
+} {
+  let width = 64;
+  let height = 64;
+  let x = 1;
+  let y = 1;
+  let theater = 'TEMPERATE';
+
+  if (!mapText) return { width, height, x, y, theater };
+
+  const mapMatch = mapText.match(/\[Map\]([\s\S]*?)(?=\n\[|$)/i);
+  if (mapMatch) {
+    const lines = mapMatch[1].split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = trimmed.substring(0, eqIdx).trim().toLowerCase();
+        const val = trimmed.substring(eqIdx + 1).trim();
+        if (key === 'width') {
+          const parsed = parseInt(val, 10);
+          if (!isNaN(parsed) && parsed > 0) width = parsed;
+        } else if (key === 'height') {
+          const parsed = parseInt(val, 10);
+          if (!isNaN(parsed) && parsed > 0) height = parsed;
+        } else if (key === 'x') {
+          const parsed = parseInt(val, 10);
+          if (!isNaN(parsed)) x = parsed;
+        } else if (key === 'y') {
+          const parsed = parseInt(val, 10);
+          if (!isNaN(parsed)) y = parsed;
+        } else if (key === 'theater') {
+          theater = val.toUpperCase();
+        }
+      }
+    }
+  }
+
+  return { width, height, x, y, theater };
+}
+

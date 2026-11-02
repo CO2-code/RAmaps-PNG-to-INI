@@ -65,8 +65,8 @@ export function parseBasicSection(iniText: string): BasicSectionData {
       if (lowerKey === 'name') result.name = val;
       else if (lowerKey === 'author') result.author = val;
       else if (lowerKey === 'gamemode') result.gameMode = val;
-      else if (lowerKey === 'maxplayer') result.maxPlayer = val;
-      else if (lowerKey === 'minplayer') result.minPlayer = val;
+      else if (lowerKey === 'maxplayer' || lowerKey === 'maxplayers') result.maxPlayer = val;
+      else if (lowerKey === 'minplayer' || lowerKey === 'minplayers') result.minPlayer = val;
     }
   }
 
@@ -150,33 +150,40 @@ export function updateIniBasicSection(
   const nl = isCrlf ? '\r\n' : '\n';
 
   // Identify defined keys to update
-  const keysToUpdate: { canonicalKey: string; lowerKey: string; value: string }[] = [];
+  const keysToUpdate: { canonicalKey: string; lowerKeys: string[]; value: string }[] = [];
 
   if (updates.name !== undefined) {
-    keysToUpdate.push({ canonicalKey: 'Name', lowerKey: 'name', value: String(updates.name) });
+    keysToUpdate.push({ canonicalKey: 'Name', lowerKeys: ['name'], value: String(updates.name) });
   }
   if (updates.author !== undefined) {
-    keysToUpdate.push({ canonicalKey: 'Author', lowerKey: 'author', value: String(updates.author) });
+    keysToUpdate.push({ canonicalKey: 'Author', lowerKeys: ['author'], value: String(updates.author) });
   }
   if (updates.gameMode !== undefined) {
-    keysToUpdate.push({ canonicalKey: 'GameMode', lowerKey: 'gamemode', value: String(updates.gameMode) });
+    keysToUpdate.push({ canonicalKey: 'GameMode', lowerKeys: ['gamemode'], value: String(updates.gameMode) });
   }
   if (updates.maxPlayer !== undefined) {
-    keysToUpdate.push({ canonicalKey: 'MaxPlayer', lowerKey: 'maxplayer', value: String(updates.maxPlayer) });
+    keysToUpdate.push({ canonicalKey: 'MaxPlayers', lowerKeys: ['maxplayers', 'maxplayer'], value: String(updates.maxPlayer) });
   }
   if (updates.minPlayer !== undefined) {
-    keysToUpdate.push({ canonicalKey: 'MinPlayer', lowerKey: 'minplayer', value: String(updates.minPlayer) });
+    keysToUpdate.push({ canonicalKey: 'MinPlayers', lowerKeys: ['minplayers', 'minplayer'], value: String(updates.minPlayer) });
   }
 
   if (keysToUpdate.length === 0) {
     return originalIni;
   }
 
-  // Find [Basic] section header
-  const basicHeaderRegex = /^\[\s*Basic\s*\]/im;
-  const basicMatch = originalIni.match(basicHeaderRegex);
+  // Find [Basic] section header index
+  let basicHeaderIdx = -1;
+  const lines = originalIni.replace(/\r\n/g, '\n').split('\n');
 
-  if (!basicMatch || basicMatch.index === undefined) {
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\[\s*Basic\s*\]$/i.test(lines[i].trim())) {
+      basicHeaderIdx = i;
+      break;
+    }
+  }
+
+  if (basicHeaderIdx === -1) {
     // If no [Basic] section exists, prepend one at the top
     const newSectionLines = ['[Basic]'];
     for (const item of keysToUpdate) {
@@ -185,31 +192,27 @@ export function updateIniBasicSection(
     return newSectionLines.join(nl) + nl + nl + originalIni;
   }
 
-  const headerIndex = basicMatch.index;
-  const headerLength = basicMatch[0].length;
-  const afterHeader = originalIni.substring(headerIndex + headerLength);
+  // Find where [Basic] ends (at next section header line or end of file)
+  let nextSectionIdx = -1;
+  for (let i = basicHeaderIdx + 1; i < lines.length; i++) {
+    if (/^\[\s*[^\]]+\s*\]$/i.test(lines[i].trim())) {
+      nextSectionIdx = i;
+      break;
+    }
+  }
+  if (nextSectionIdx === -1) {
+    nextSectionIdx = lines.length;
+  }
 
-  // Find where this section ends (next section header starting with [ at line start)
-  const nextSectionMatch = afterHeader.match(/\r?\n\[/);
-  const sectionContentEnd = nextSectionMatch && nextSectionMatch.index !== undefined
-    ? nextSectionMatch.index
-    : afterHeader.length;
-
-  const sectionRawContent = afterHeader.substring(0, sectionContentEnd);
-  const remainder = afterHeader.substring(sectionContentEnd);
-
-  // Parse lines of the [Basic] section content
-  const sectionLines = sectionRawContent.split(/\r?\n/);
-
-  // Track which keys were found and replaced
+  const basicLines = lines.slice(basicHeaderIdx + 1, nextSectionIdx);
   const replacedKeys = new Set<string>();
-  const modifiedLines: string[] = [];
+  const modifiedBasicLines: string[] = [];
 
-  for (const line of sectionLines) {
+  for (const line of basicLines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith(';')) {
       // Preserve comments and empty lines
-      modifiedLines.push(line);
+      modifiedBasicLines.push(line);
       continue;
     }
 
@@ -218,34 +221,39 @@ export function updateIniBasicSection(
       const key = line.substring(0, eqIdx).trim();
       const lowerKey = key.toLowerCase();
 
-      const updateItem = keysToUpdate.find((k) => k.lowerKey === lowerKey);
+      const updateItem = keysToUpdate.find((k) => k.lowerKeys.includes(lowerKey));
       if (updateItem) {
-        if (!replacedKeys.has(lowerKey)) {
-          // Replace the first occurrence
-          modifiedLines.push(`${updateItem.canonicalKey}=${updateItem.value}`);
+        // Check if any alias for this item has already been written
+        const alreadyReplaced = updateItem.lowerKeys.some((k) => replacedKeys.has(k));
+        if (!alreadyReplaced) {
+          // Replace the first occurrence with the canonical key
+          modifiedBasicLines.push(`${updateItem.canonicalKey}=${updateItem.value}`);
           replacedKeys.add(lowerKey);
         }
-        // If a duplicate line for this key already existed, drop it to prevent duplicates
+        // If a duplicate line (e.g. MaxPlayer + MaxPlayers) already existed, drop it to prevent conflicts
         continue;
       }
     }
 
-    // Unrelated key: preserve exactly as-is
-    modifiedLines.push(line);
+    // Unrelated key (Player, Action, Theme, CarryOverCap, etc.): preserve exactly as-is
+    modifiedBasicLines.push(line);
   }
 
   // Append any keys that did not exist yet in [Basic]
   for (const item of keysToUpdate) {
-    if (!replacedKeys.has(item.lowerKey)) {
-      // If the last line is empty, insert before it or append
-      modifiedLines.push(`${item.canonicalKey}=${item.value}`);
+    const wasReplaced = item.lowerKeys.some((k) => replacedKeys.has(k));
+    if (!wasReplaced) {
+      modifiedBasicLines.push(`${item.canonicalKey}=${item.value}`);
     }
   }
 
-  const newSectionContent = modifiedLines.join(nl);
-  const prefix = originalIni.substring(0, headerIndex + headerLength);
+  const resultLines = [
+    ...lines.slice(0, basicHeaderIdx + 1),
+    ...modifiedBasicLines,
+    ...lines.slice(nextSectionIdx),
+  ];
 
-  return prefix + newSectionContent + remainder;
+  return resultLines.join(nl);
 }
 
 /**

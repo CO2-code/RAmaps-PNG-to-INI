@@ -25,7 +25,14 @@ import {
 import { zipSync } from 'fflate';
 import { parseMprMap, MprMapData, renderMprToCanvas } from '../lib/mprParser';
 import { renderMprOriginalAssets, preloadMapAssets } from '../lib/raOriginalRenderer';
-import { convertImageToPreviewPack, injectPreviewIntoMapFile, stripPreviewFromMapFile } from '../lib/formatters';
+import {
+  convertImageToPreviewPack,
+  injectPreviewIntoMapFile,
+  stripPreviewFromMapFile,
+  calculateMapHdDimensions,
+  extractMapSectionInfo,
+} from '../lib/formatters';
+import { PaletteId } from '../types';
 import { compressWithTinyPng, getTinyPngApiKey, formatFileSize } from '../lib/tinypng';
 import { TinyPngModal } from './TinyPngModal';
 import {
@@ -58,6 +65,7 @@ export interface BatchMapItem {
   resultPngBlob?: Blob;
   resultPngDataUrl?: string;
   linesGenerated?: number;
+  previewDimensions?: { width: number; height: number };
 
   // Prepare Maps attributes
   initialMapName: string;
@@ -68,27 +76,46 @@ export interface BatchMapItem {
   outputFilename: string; // Live updated unique Windows-safe filename
 }
 
-export type BatchAction = 'prepare_maps' | 'inject_previews' | 'render_pngs' | 'strip_previews';
+export type BatchAction = 'auto_batch' | 'prepare_maps' | 'inject_previews' | 'render_pngs' | 'strip_previews';
 
 interface BatchMapModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialAction?: BatchAction;
 }
 
-export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose }) => {
+export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, initialAction }) => {
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const filesInputRef = useRef<HTMLInputElement | null>(null);
   const progressCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cancelRef = useRef<boolean>(false);
 
   const [items, setItems] = useState<BatchMapItem[]>([]);
-  const [selectedAction, setSelectedAction] = useState<BatchAction>('prepare_maps');
+  const [selectedAction, setSelectedAction] = useState<BatchAction>(initialAction || 'auto_batch');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [currentMapName, setCurrentMapName] = useState<string>('');
   const [isComplete, setIsComplete] = useState<boolean>(false);
 
+  // Sync initialAction if prop changes when opening
+  useEffect(() => {
+    if (isOpen && initialAction) {
+      setSelectedAction(initialAction);
+    }
+  }, [isOpen, initialAction]);
+
+  // If opened directly into auto_batch mode with no maps loaded, prompt folder picker
+  useEffect(() => {
+    if (isOpen && initialAction === 'auto_batch' && items.length === 0 && !isProcessing) {
+      const timer = setTimeout(() => {
+        folderInputRef.current?.click();
+      }, 180);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, initialAction]);
+
   // --- Prepare Maps Settings ---
+  const [autoBatchHdSize, setAutoBatchHdSize] = useState<number>(512);
   const [categoryNamingEnabled, setCategoryNamingEnabled] = useState<boolean>(true);
   const [bulkCategory, setBulkCategory] = useState<MapCategory | 'auto'>('auto');
   const [updateMapName, setUpdateMapName] = useState<boolean>(true);
@@ -102,11 +129,11 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
   // 'none' = Neither
   const [preparePreviewMode, setPreparePreviewMode] = useState<'inject_ini' | 'export_png' | 'none'>('inject_ini');
   const [prepareInjectFormat, setPrepareInjectFormat] = useState<'cncnet_lzo_24bit' | 'lcw_8bit'>('cncnet_lzo_24bit');
-  const [prepareInjectSize, setPrepareInjectSize] = useState<number>(256);
+  const [prepareInjectSize, setPrepareInjectSize] = useState<number>(512);
 
   // --- Inject Previews Settings (Standard action) ---
   const [injectFormat, setInjectFormat] = useState<'cncnet_lzo_24bit' | 'lcw_8bit'>('cncnet_lzo_24bit');
-  const [injectSize, setInjectSize] = useState<number>(256);
+  const [injectSize, setInjectSize] = useState<number>(512);
 
   // --- Render PNGs Settings (Standard action) ---
   const [renderEngine, setRenderEngine] = useState<'original' | 'vector'>('original');
@@ -307,19 +334,26 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
     setItems(itemsWithFilenames);
     setIsComplete(false);
     setCurrentIndex(0);
+
+    // If auto_batch is selected, automatically start processing right after reading the folder
+    if (selectedAction === 'auto_batch' && itemsWithFilenames.length > 0) {
+      setTimeout(() => {
+        handleStartBatch(itemsWithFilenames);
+      }, 150);
+    }
   };
 
   // Run the batch execution
-  const handleStartBatch = async () => {
-    if (items.length === 0 || isProcessing) return;
+  const handleStartBatch = async (overrideItems?: BatchMapItem[]) => {
+    const listToProcess = overrideItems || items;
+    if (listToProcess.length === 0 || isProcessing) return;
 
     // Validation checks
-    const hasEmptyName = items.some((item) => item.parsed && !item.editedMapName.trim());
+    const hasEmptyName = listToProcess.some((item) => item.parsed && !item.editedMapName.trim());
     if (hasEmptyName && (selectedAction === 'prepare_maps' && updateMapName)) {
       alert('One or more maps have an empty Map Name. Please enter a valid name for each map.');
       return;
     }
-
 
     setIsProcessing(true);
     cancelRef.current = false;
@@ -327,7 +361,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
     setBatchTinyPngSavedBytes(0);
     setBatchTinyPngCompressedCount(0);
 
-    const updated = [...items];
+    const updated = [...listToProcess];
 
     for (let i = 0; i < updated.length; i++) {
       if (cancelRef.current) {
@@ -358,26 +392,29 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
         const map = item.parsed;
         let currentMapContent = item.content;
 
-        // === ACTION 1: PREPARE MAPS ===
-        if (selectedAction === 'prepare_maps') {
+        // === ACTION 1: AUTO BATCH OR PREPARE MAPS ===
+        if (selectedAction === 'auto_batch' || selectedAction === 'prepare_maps') {
+          const isAuto = selectedAction === 'auto_batch';
           // 1. Build metadata updates
           const updates: BasicSectionUpdates = {};
 
-          if (updateMapName) {
+          if (isAuto || updateMapName) {
             const cleanTitle = stripCategoryPrefixFromName(item.editedMapName);
-            const prefix = categoryNamingEnabled ? CATEGORIES[item.category].namePrefix : '';
+            const prefix = (isAuto || categoryNamingEnabled) ? CATEGORIES[item.category].namePrefix : '';
             updates.name = `${prefix}${cleanTitle}`.trim();
           }
 
-          if (updateAuthor && item.editedAuthor.trim().length > 0) {
-            updates.author = item.editedAuthor.trim();
+          if (isAuto || (updateAuthor && item.editedAuthor.trim().length > 0)) {
+            if (item.editedAuthor.trim().length > 0) {
+              updates.author = item.editedAuthor.trim();
+            }
           }
 
-          if (updateGameMode) {
-            updates.gameMode = gameModeValue.trim() || 'Custom';
+          if (isAuto || updateGameMode) {
+            updates.gameMode = isAuto ? 'Custom' : (gameModeValue.trim() || 'Custom');
           }
 
-          if (updateMaxPlayer) {
+          if (isAuto || updateMaxPlayer) {
             let catMax = 8;
             if (item.category === '1v1') catMax = 2;
             else if (item.category === '2v2') catMax = 4;
@@ -393,13 +430,17 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
             updates.maxPlayer = catMax;
           }
 
-          // Note: MinPlayer is intentionally untouched per requirements
+          // MinPlayers=1 in auto_batch mode per instructions
+          if (isAuto) {
+            updates.minPlayer = 1;
+          }
 
           // Apply non-destructive INI modifications to [Basic]
           currentMapContent = updateIniBasicSection(currentMapContent, updates);
 
           // 2. Mutual Exclusive Previews: EITHER [PreviewPack] INI OR companion .PNG (never both!)
-          if (preparePreviewMode === 'inject_ini') {
+          const effectivePreviewMode = isAuto ? 'inject_ini' : preparePreviewMode;
+          if (effectivePreviewMode === 'inject_ini') {
             // OPTION A: Injects [PreviewPack] into map file, strictly NO separate companion .png!
             const offCanvas = document.createElement('canvas');
             try {
@@ -408,7 +449,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                 map,
                 {
                   onlyDrawVisible: true,
-                  showWaypoints: true,
+                  showWaypoints: false, // Match RAFullMapPreviewGenerator: clean authentic battlefield without debug wireframes
                   showOre: true,
                   showWalls: true,
                   showStructures: true,
@@ -425,7 +466,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                   showOre: true,
                   showWalls: true,
                   showStructures: true,
-                  showWaypoints: true,
+                  showWaypoints: false,
                   showGrid: false,
                   onlyDrawVisible: true,
                 },
@@ -433,32 +474,52 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
               );
             }
 
+            // Calculate true map dimensions & theater directly from [Map] section
+            const mapInfo = extractMapSectionInfo(currentMapContent);
+            const mapW = map?.mapWidth || mapInfo.width || 64;
+            const mapH = map?.mapHeight || mapInfo.height || 64;
+            const maxBudget = isAuto ? autoBatchHdSize : prepareInjectSize;
+            const { width: hdW, height: hdH } = calculateMapHdDimensions(mapW, mapH, maxBudget);
+
+            // Determine authentic theater palette
+            const rawTheater = (map?.theater || mapInfo.theater || 'temperate').toLowerCase();
+            const palette: PaletteId =
+              rawTheater === 'snow' || rawTheater === 'winter'
+                ? 'snow'
+                : rawTheater === 'interior'
+                ? 'interior'
+                : 'temperat';
+
             if (progressCanvasRef.current && offCanvas.width > 0 && offCanvas.height > 0) {
-              progressCanvasRef.current.width = 160;
-              progressCanvasRef.current.height = 160;
+              const pW = 160;
+              const pH = Math.max(20, Math.round(160 * (offCanvas.height / offCanvas.width)));
+              progressCanvasRef.current.width = pW;
+              progressCanvasRef.current.height = pH;
               const pCtx = progressCanvasRef.current.getContext('2d');
               if (pCtx) {
                 pCtx.imageSmoothingEnabled = false;
-                pCtx.drawImage(offCanvas, 0, 0, 160, 160);
+                pCtx.drawImage(offCanvas, 0, 0, pW, pH);
               }
             }
 
+            // Full ultra super HD 24-bit TrueColor LZO without bit truncation or artificial line limits
             const previewResult = convertImageToPreviewPack(offCanvas, {
-              width: prepareInjectSize,
-              height: prepareInjectSize,
-              palette: map.theater === 'snow' ? 'snow' : 'temperat',
-              encoding: prepareInjectFormat,
+              width: hdW,
+              height: hdH,
+              palette,
+              encoding: isAuto ? 'cncnet_lzo_24bit' : prepareInjectFormat,
               lineLength: 70,
               includePreviewSection: true,
-              colorNoiseReduction: true,
-              targetLineBudget: 1000,
+              colorNoiseReduction: false, // Pure 24-bit TrueColor! No loss!
+              targetLineBudget: undefined, // Unlimited line budget for maximum Ultra Super HD!
               dithering: false,
-              compressionOptimization: 'balanced',
+              compressionOptimization: 'max', // Maximum lossless dictionary compression
               maintainAspectRatio: true,
             });
 
             currentMapContent = injectPreviewIntoMapFile(currentMapContent, previewResult.fullIniText);
             item.linesGenerated = previewResult.lineCount;
+            item.previewDimensions = { width: previewResult.targetWidth, height: previewResult.targetHeight };
             // Strictly NO companion PNG file
             item.resultPngBlob = undefined;
             item.resultPngDataUrl = undefined;
@@ -571,33 +632,50 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
             );
           }
 
+          // Calculate true map dimensions & theater directly from [Map] section
+          const mapInfo = extractMapSectionInfo(item.content);
+          const mapW = map?.mapWidth || mapInfo.width || 64;
+          const mapH = map?.mapHeight || mapInfo.height || 64;
+          const { width: hdW, height: hdH } = calculateMapHdDimensions(mapW, mapH, injectSize);
+
+          const rawTheater = (map?.theater || mapInfo.theater || 'temperate').toLowerCase();
+          const palette: PaletteId =
+            rawTheater === 'snow' || rawTheater === 'winter'
+              ? 'snow'
+              : rawTheater === 'interior'
+              ? 'interior'
+              : 'temperat';
+
           if (progressCanvasRef.current && offCanvas.width > 0 && offCanvas.height > 0) {
-            progressCanvasRef.current.width = 160;
-            progressCanvasRef.current.height = 160;
+            const pW = 160;
+            const pH = Math.max(20, Math.round(160 * (offCanvas.height / offCanvas.width)));
+            progressCanvasRef.current.width = pW;
+            progressCanvasRef.current.height = pH;
             const pCtx = progressCanvasRef.current.getContext('2d');
             if (pCtx) {
               pCtx.imageSmoothingEnabled = false;
-              pCtx.drawImage(offCanvas, 0, 0, 160, 160);
+              pCtx.drawImage(offCanvas, 0, 0, pW, pH);
             }
           }
 
           const previewResult = convertImageToPreviewPack(offCanvas, {
-            width: injectSize,
-            height: injectSize,
-            palette: map.theater === 'snow' ? 'snow' : 'temperat',
+            width: hdW,
+            height: hdH,
+            palette,
             encoding: injectFormat,
             lineLength: 70,
             includePreviewSection: true,
-            colorNoiseReduction: true,
-            targetLineBudget: 1000,
+            colorNoiseReduction: false,
+            targetLineBudget: undefined,
             dithering: false,
-            compressionOptimization: 'balanced',
+            compressionOptimization: 'max',
             maintainAspectRatio: true,
           });
 
           const mergedText = injectPreviewIntoMapFile(item.content, previewResult.fullIniText);
           item.resultMprText = mergedText;
           item.linesGenerated = previewResult.lineCount;
+          item.previewDimensions = { width: previewResult.targetWidth, height: previewResult.targetHeight };
 
           // Injected previews into map, strictly NO companion PNG file
           item.resultPngBlob = undefined;
@@ -742,19 +820,22 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
     }
 
     // 3. summary.json manifest
+    const isAuto = selectedAction === 'auto_batch';
     const summary = {
-      app: 'Red Alert 1 PNG to INI Map Studio',
+      app: 'RAnderer',
       workflow: selectedAction,
       processedAt: new Date().toISOString(),
       options: {
-        categoryNamingEnabled,
-        updateMapName,
-        updateAuthor,
-        updateGameMode,
-        gameMode: updateGameMode ? gameModeValue : undefined,
-        updateMaxPlayer,
-        autoMaxPlayerFromCategory: updateMaxPlayer,
-        preparePreviewMode: selectedAction === 'prepare_maps' ? preparePreviewMode : undefined,
+        isAutoBatch: isAuto,
+        categoryNamingEnabled: isAuto ? true : categoryNamingEnabled,
+        updateMapName: isAuto ? true : updateMapName,
+        updateAuthor: isAuto ? true : updateAuthor,
+        updateGameMode: isAuto ? true : updateGameMode,
+        gameMode: isAuto ? 'Custom' : (updateGameMode ? gameModeValue : undefined),
+        updateMaxPlayer: isAuto ? true : updateMaxPlayer,
+        minPlayer: isAuto ? 1 : undefined,
+        autoMaxPlayerFromCategory: isAuto ? true : updateMaxPlayer,
+        preparePreviewMode: (isAuto || selectedAction === 'prepare_maps') ? (isAuto ? 'inject_ini' : preparePreviewMode) : undefined,
       },
       statistics: {
         totalMaps: items.length,
@@ -773,6 +854,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
         status: i.status,
         errorMessage: i.errorMessage || null,
         previewLinesGenerated: i.linesGenerated || null,
+        previewDimensions: i.previewDimensions ? `${i.previewDimensions.width}x${i.previewDimensions.height}` : null,
       })),
     };
 
@@ -870,6 +952,37 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
           {/* Step 1: Select Map Folder or Files */}
           {items.length === 0 ? (
             <div className="space-y-4">
+              {/* ⚡ 1-Click Automatic Pipeline Hero Card */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#21090d] via-[#140608] to-[#0a0305] border border-amber-600/60 shadow-[0_0_30px_rgba(245,158,11,0.2)] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+                    <span className="text-xs font-bold text-amber-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                      <span>1-Click Automatic Map Batch Pipeline</span>
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-white font-['Rajdhani',sans-serif] uppercase tracking-wide">
+                    Automatic Red Alert Map Processing
+                  </h3>
+                  <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+                    Select your maps folder &mdash; tool scans available <code className="text-amber-400 font-mono">.mpr</code> files, writes <code className="text-amber-400 font-mono">[Basic] GameMode=Custom MaxPlayers=(2/4/6/8) MinPlayers=1</code>, generates &amp; injects <code className="text-amber-400 font-mono">[Preview]</code> and <code className="text-amber-400 font-mono">[PreviewPack]</code> (CnCNet 24-bit TrueColor LZO), and renames files with category prefixes.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAction('auto_batch');
+                    folderInputRef.current?.click();
+                  }}
+                  className="px-5 py-3.5 rounded-xl bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-950/40 cursor-pointer shrink-0 transition-all font-['Rajdhani',sans-serif] hover:scale-102"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  <span>Select Folder &amp; Auto-Run</span>
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Option A: Select Entire Folder */}
                 <div
@@ -997,7 +1110,30 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                     Select Action:
                   </label>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                    {/* Action 0: ⚡ Auto Batch (1-Click) */}
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => setSelectedAction('auto_batch')}
+                      className={`p-3 rounded-xl border text-left flex flex-col justify-between gap-1 transition-all cursor-pointer ${
+                        selectedAction === 'auto_batch'
+                          ? 'bg-amber-950/70 border-amber-500 text-white shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+                          : 'bg-[#140608] border-[#3b0d13] text-slate-300 hover:border-amber-600/50'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-amber-400 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <Zap className="w-3.5 h-3.5 fill-amber-400" />
+                          <span>Auto Batch</span>
+                        </span>
+                        {selectedAction === 'auto_batch' && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        1-Click: Rules, MaxPlayers, [PreviewPack] &amp; Category Rename
+                      </p>
+                    </button>
+
                     {/* Action 1: Prepare Maps */}
                     <button
                       type="button"
@@ -1014,7 +1150,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                         {selectedAction === 'prepare_maps' && <Check className="w-3.5 h-3.5 text-blue-500" />}
                       </div>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                        Metadata, Categories, Authors, Previews &amp; ZIP
+                        Custom Metadata, Categories, Authors, Previews &amp; ZIP
                       </p>
                     </button>
 
@@ -1086,12 +1222,86 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
                   <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wide flex items-center gap-1.5">
                     <Sliders className="w-3.5 h-3.5 text-slate-500" />
-                    Configuration: {selectedAction === 'prepare_maps' ? 'Prepare Maps Options' : selectedAction === 'inject_previews' ? 'Preview Injection Parameters' : selectedAction === 'render_pngs' ? 'PNG Render Engine' : 'Preview Stripping'}
+                    Configuration: {selectedAction === 'auto_batch' ? '⚡ Automatic 1-Click Pipeline' : selectedAction === 'prepare_maps' ? 'Prepare Maps Options' : selectedAction === 'inject_previews' ? 'Preview Injection Parameters' : selectedAction === 'render_pngs' ? 'PNG Render Engine' : 'Preview Stripping'}
                   </span>
                   <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                     Applied to all {items.length} maps in batch
                   </span>
                 </div>
+
+                {/* ⚡ AUTO BATCH CONFIGURATION */}
+                {selectedAction === 'auto_batch' && (
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3.5 rounded-xl bg-[#140608] border border-amber-900/50 space-y-2.5 shadow-inner">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-amber-300 font-bold font-['Rajdhani',sans-serif] uppercase text-sm tracking-wider">
+                          <Zap className="w-4 h-4 fill-amber-400 text-amber-400" />
+                          <span>1-Click Automatic Red Alert Map Pipeline</span>
+                        </div>
+                        <span className="text-[10px] font-mono uppercase bg-amber-950/90 border border-amber-700/60 text-amber-300 px-2 py-0.5 rounded font-bold">
+                          Zero Setup Required
+                        </span>
+                      </div>
+                      <p className="text-slate-300 text-xs leading-relaxed">
+                        The automatic workflow standardizes all <code className="text-amber-400 font-mono">.mpr</code> maps with the official CnCNet rules, dynamic category player caps, clean radar previews, and category-prefixed filenames:
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+                        <div className="p-2.5 rounded-lg bg-[#0d0305] border border-[#4a1216] space-y-1">
+                          <div className="text-[10px] font-mono uppercase text-amber-400 font-bold">[Basic] INI Rules</div>
+                          <div className="font-mono text-slate-200 text-xs space-y-0.5">
+                            <div className="text-emerald-400 font-semibold">GameMode=Custom</div>
+                            <div>MaxPlayers=(2 / 4 / 6 / 8)</div>
+                            <div className="text-emerald-400 font-semibold">MinPlayers=1</div>
+                          </div>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-[#0d0305] border border-[#4a1216] space-y-1">
+                          <div className="text-[10px] font-mono uppercase text-amber-400 font-bold">Radar Previews</div>
+                          <div className="font-mono text-slate-200 text-xs space-y-0.5">
+                            <div>[Preview] metadata</div>
+                            <div>[PreviewPack] 24-bit LZO</div>
+                            <div>256×256 CnCNet standard</div>
+                          </div>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-[#0d0305] border border-[#4a1216] space-y-1">
+                          <div className="text-[10px] font-mono uppercase text-amber-400 font-bold">Category Renaming</div>
+                          <div className="font-mono text-slate-200 text-xs space-y-0.5">
+                            <div>2_ / 4_ / 6_ / 8_ prefix</div>
+                            <div>[2], [4] title in [Basic]</div>
+                            <div>Windows-safe filenames</div>
+                          </div>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-[#0d0305] border border-[#4a1216] space-y-1">
+                          <div className="text-[10px] font-mono uppercase text-amber-400 font-bold">Mutual Exclusivity</div>
+                          <div className="font-mono text-slate-200 text-xs space-y-0.5">
+                            <div>Internal [PreviewPack] only</div>
+                            <div>Zero companion PNG clutter</div>
+                            <div>Untouched backup archive</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* HD Resolution Selector for 1-Click Auto Batch */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-amber-900/50">
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-300 font-bold text-xs uppercase tracking-wide">
+                            HD Preview Setting:
+                          </span>
+                          <select
+                            value={autoBatchHdSize}
+                            onChange={(e) => setAutoBatchHdSize(parseInt(e.target.value, 10))}
+                            className="bg-[#080203] border border-amber-600/70 text-amber-200 rounded-lg px-2.5 py-1 text-xs font-mono font-semibold focus:outline-none cursor-pointer"
+                          >
+                            <option value={512}>512 max px &mdash; Ultra Super HD (Maximum Crispness &amp; Detail)</option>
+                            <option value={256}>256 max px &mdash; CnCNet Full HD (Standard Lobby)</option>
+                          </select>
+                        </div>
+                        <div className="text-[11px] font-mono text-slate-400">
+                          True 24-bit TrueColor LZO &bull; Aspect ratio preserved from <code className="text-amber-400 font-mono">[Map]</code> &bull; Unlimited line budget
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* PREPARE MAPS CONFIGURATION */}
                 {selectedAction === 'prepare_maps' && (
@@ -1357,11 +1567,12 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                             <select
                               value={prepareInjectSize}
                               onChange={(e) => setPrepareInjectSize(parseInt(e.target.value, 10))}
-                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs text-slate-800 dark:text-white font-mono"
+                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs text-slate-800 dark:text-white font-mono cursor-pointer"
                             >
-                              <option value={256}>256×256 px (CnCNet HD · Recommended)</option>
-                              <option value={192}>192×192 px (Balanced)</option>
-                              <option value={128}>128×128 px (Classic 1996)</option>
+                              <option value={512}>512 max px (Ultra Super HD · Maximum Crispness)</option>
+                              <option value={256}>256 max px (CnCNet Full HD · Recommended)</option>
+                              <option value={192}>192 max px (Balanced)</option>
+                              <option value={128}>128 max px (Classic 1996)</option>
                             </select>
                           </div>
                         </div>
@@ -1433,11 +1644,12 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                       <select
                         value={injectSize}
                         onChange={(e) => setInjectSize(parseInt(e.target.value, 10))}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white font-mono"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white font-mono cursor-pointer"
                       >
-                        <option value={256}>256×256 px (CnCNet HD · ~800–1,100 lines · Recommended)</option>
-                        <option value={192}>192×192 px (Balanced · ~450–700 lines)</option>
-                        <option value={128}>128×128 px (Classic · ~200–350 lines)</option>
+                        <option value={512}>512 max px (Ultra Super HD 512 · Maximum Detail)</option>
+                        <option value={256}>256 max px (CnCNet Full HD 256 · Recommended)</option>
+                        <option value={192}>192 max px (Balanced · ~450–700 lines)</option>
+                        <option value={128}>128 max px (Classic · ~200–350 lines)</option>
                       </select>
                     </div>
 
@@ -1649,11 +1861,25 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                     <button
                       type="button"
                       disabled={hasEmptyMapName}
-                      onClick={handleStartBatch}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-950/20 transition-all cursor-pointer"
+                      onClick={() => handleStartBatch()}
+                      className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition-all cursor-pointer ${
+                        selectedAction === 'auto_batch'
+                          ? 'bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 shadow-amber-950/40 ring-1 ring-amber-400/50'
+                          : 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 shadow-emerald-950/20'
+                      }`}
                     >
-                      <Play className="w-4 h-4 fill-white" />
-                      <span>Start {selectedAction === 'prepare_maps' ? 'Prepare Maps' : 'Batch Process'} ({items.length} Maps)</span>
+                      {selectedAction === 'auto_batch' ? (
+                        <Zap className="w-4 h-4 fill-white" />
+                      ) : (
+                        <Play className="w-4 h-4 fill-white" />
+                      )}
+                      <span>
+                        {selectedAction === 'auto_batch'
+                          ? `Run Automatic Batch (${items.length} Maps)`
+                          : selectedAction === 'prepare_maps'
+                          ? `Start Prepare Maps (${items.length} Maps)`
+                          : `Start Batch Process (${items.length} Maps)`}
+                      </span>
                     </button>
                   )}
 
@@ -1724,7 +1950,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                       <tr>
                         <th className="p-2.5">Map File &amp; Info</th>
                         <th className="p-2.5">Map Title (Clean Name)</th>
-                        {selectedAction === 'prepare_maps' && (
+                        {(selectedAction === 'auto_batch' || selectedAction === 'prepare_maps') && (
                           <>
                             <th className="p-2.5">Category</th>
                             <th className="p-2.5">Author</th>
@@ -1773,15 +1999,36 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                                   </div>
                                 )}
                               </div>
+                            ) : selectedAction === 'auto_batch' ? (
+                              <div className="space-y-0.5 max-w-[170px]">
+                                <div className="font-semibold text-slate-100 truncate" title={item.editedMapName}>
+                                  {item.editedMapName}
+                                </div>
+                                {item.parsed && (
+                                  <div className="text-[10px] text-slate-400 font-mono">
+                                    {item.parsed.mapWidth}×{item.parsed.mapHeight} · {item.parsed.theater.toUpperCase()}
+                                  </div>
+                                )}
+                                {item.category !== 'none' && (
+                                  <div className="text-[10px] text-amber-400 font-sans truncate">
+                                    In INI: <code>{CATEGORIES[item.category].namePrefix}{stripCategoryPrefixFromName(item.editedMapName)}</code>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <div className="truncate max-w-[160px]" title={item.parsed?.title || item.name}>
-                                {item.parsed?.title || item.name}
+                                <div className="font-semibold text-slate-100 truncate">{item.parsed?.title || item.name}</div>
+                                {item.parsed && (
+                                  <div className="text-[10px] text-slate-400 font-mono">
+                                    {item.parsed.mapWidth}×{item.parsed.mapHeight} · {item.parsed.theater.toUpperCase()}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </td>
 
                           {/* Col 3: Category */}
-                          {selectedAction === 'prepare_maps' && (
+                          {(selectedAction === 'auto_batch' || selectedAction === 'prepare_maps') && (
                             <td className="p-2.5">
                               <select
                                 disabled={isProcessing}
@@ -1799,7 +2046,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                           )}
 
                           {/* Col 4: Author */}
-                          {selectedAction === 'prepare_maps' && (
+                          {(selectedAction === 'auto_batch' || selectedAction === 'prepare_maps') && (
                             <td className="p-2.5 min-w-[120px]">
                               <input
                                 type="text"
@@ -1813,7 +2060,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                           )}
 
                           {/* Col 5: Output Filename */}
-                          {selectedAction === 'prepare_maps' && (
+                          {(selectedAction === 'auto_batch' || selectedAction === 'prepare_maps') && (
                             <td className="p-2.5 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 max-w-[150px] truncate" title={item.outputFilename}>
                               {item.outputFilename}
                             </td>
@@ -1852,7 +2099,11 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose })
                               <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
                                 <CheckCircle className="w-3.5 h-3.5" />
                                 Done
-                                {item.linesGenerated && ` (~${item.linesGenerated}L)`}
+                                {item.linesGenerated !== undefined && (
+                                  <span className="text-[11px] font-normal text-emerald-400 font-mono">
+                                    (~{item.linesGenerated}L{item.previewDimensions ? ` · ${item.previewDimensions.width}×${item.previewDimensions.height}` : ''})
+                                  </span>
+                                )}
                               </span>
                             )}
                             {item.status === 'skipped' && (

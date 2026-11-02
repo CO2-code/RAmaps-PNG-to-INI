@@ -270,13 +270,26 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   type="button"
                   onClick={() => applyPresetDimension(256)}
                   className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                    options.width === 256 && options.height === 256
+                    Math.max(options.width, options.height) === 256
                       ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
                       : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                 >
-                  <div className="text-xs font-bold text-slate-100">256 × 256</div>
-                  <div className="text-[10px] text-slate-400">CnCNet Max (~5,000 lines)</div>
+                  <div className="text-xs font-bold text-slate-100">256 max px</div>
+                  <div className="text-[10px] text-slate-400">CnCNet Full HD (~5k)</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => applyPresetDimension(512)}
+                  className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                    Math.max(options.width, options.height) === 512
+                      ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
+                      : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-emerald-400">512 max px</div>
+                  <div className="text-[10px] text-slate-400">Ultra Super HD</div>
                 </button>
               </div>
             </div>
