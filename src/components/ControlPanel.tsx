@@ -291,6 +291,19 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   <div className="text-xs font-bold text-emerald-400">512 max px</div>
                   <div className="text-[10px] text-slate-400">Ultra Super HD</div>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => applyPresetDimension(1024)}
+                  className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                    Math.max(options.width, options.height) === 1024
+                      ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
+                      : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-amber-400">1024 max px</div>
+                  <div className="text-[10px] text-slate-400">Mega 8K Ultra</div>
+                </button>
               </div>
             </div>
           </div>

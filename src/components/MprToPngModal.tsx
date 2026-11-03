@@ -76,8 +76,8 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
   const [assetProgress, setAssetProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [assetLoadError, setAssetLoadError] = useState<string | null>(null);
 
-  // Original asset scale multiplier: 1.0 = native 24px, 0.5 = 12px, 0.25 = 6px
-  const [originalScale, setOriginalScale] = useState<number>(0.5);
+  // Original asset scale multiplier: 2.0 = 48px Super HD (default), 1.0 = native 24px, 4.0 = 96px Mega 8K
+  const [originalScale, setOriginalScale] = useState<number>(2.0);
 
   // Vector render options
   const [renderOptions, setRenderOptions] = useState<MprRenderOptions>({
@@ -286,13 +286,12 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     reader.readAsText(file);
   };
 
-  const handleDownloadPng = async (scaleMultiplier: number = 1) => {
-    if (!canvasRef.current || !mapData) return;
+  const handleDownloadPng = async (requestedScale: number = 2) => {
+    if (!mapData) return;
 
-    let exportCanvas = canvasRef.current;
+    let exportCanvas: HTMLCanvasElement;
 
-    // If higher scale is requested, render onto a dedicated canvas
-    if (scaleMultiplier !== 1 && viewMode === 'full_render') {
+    if (viewMode === 'full_render') {
       exportCanvas = document.createElement('canvas');
       if (assetEngine === 'original') {
         await renderMprOriginalAssets(
@@ -303,7 +302,7 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
             showOre: renderOptions.showOre,
             showStructures: renderOptions.showStructures,
             showWalls: renderOptions.showWalls !== false,
-            scaleMultiplier: originalScale * scaleMultiplier,
+            scaleMultiplier: requestedScale, // Direct scale multiplier (1.0 = 24px, 2.0 = 48px, 4.0 = 96px)
           },
           exportCanvas
         );
@@ -312,16 +311,20 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
           mapData,
           {
             ...renderOptions,
-            cellSize: renderOptions.cellSize * scaleMultiplier,
+            cellSize: Math.round(renderOptions.cellSize * requestedScale),
           },
           exportCanvas
         );
       }
+    } else {
+      if (!canvasRef.current) return;
+      exportCanvas = canvasRef.current;
     }
 
     const cleanBaseName = uploadedFileName.replace(/\.[^/.]+$/, '');
     const engineTag = assetEngine === 'original' ? 'original_graphics' : 'tactical';
-    const baseDownloadName = `${cleanBaseName}_${engineTag}_${exportCanvas.width}x${exportCanvas.height}.png`;
+    const scaleTag = `${requestedScale}x`;
+    const baseDownloadName = `${cleanBaseName}_${engineTag}_${scaleTag}_${exportCanvas.width}x${exportCanvas.height}.png`;
 
     // Automatic TinyPNG compression if enabled
     const apiKey = getTinyPngApiKey();
@@ -391,14 +394,29 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
     }
   };
 
-  const handleSendToApp = () => {
-    if (!canvasRef.current || !mapData || !onSendToGenerator) return;
+  const handleSendToApp = async () => {
+    if (!mapData || !onSendToGenerator) return;
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = canvasRef.current.width;
-    tempCanvas.height = canvasRef.current.height;
-    const ctx = tempCanvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(canvasRef.current, 0, 0);
+    if (assetEngine === 'original') {
+      await renderMprOriginalAssets(
+        mapData,
+        {
+          onlyDrawVisible: renderOptions.onlyDrawVisible,
+          showWaypoints: false, // Clean preview for in-game INI
+          showOre: renderOptions.showOre,
+          showStructures: renderOptions.showStructures,
+          showWalls: renderOptions.showWalls !== false,
+          scaleMultiplier: 2.0, // 2x Super HD supersampling for highest fidelity
+        },
+        tempCanvas
+      );
+    } else if (canvasRef.current) {
+      tempCanvas.width = canvasRef.current.width;
+      tempCanvas.height = canvasRef.current.height;
+      const ctx = tempCanvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(canvasRef.current, 0, 0);
+      }
     }
     const cleanBaseName = uploadedFileName.replace(/\.[^/.]+$/, '');
     onSendToGenerator(tempCanvas, `${cleanBaseName}_map.png`);
@@ -873,24 +891,31 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                   <div className="pt-2 border-t border-neutral-900">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[11px] font-bold text-neutral-400 uppercase">
-                        Original Asset Scale:
+                        Render Scale / Quality:
                       </span>
-                      <span className="text-xs font-mono text-emerald-400">
-                        {originalScale === 1.0 ? 'Native (24px/cell)' : originalScale === 0.5 ? 'Tactical (12px/cell)' : 'Compact (6px/cell)'}
+                      <span className="text-xs font-mono text-emerald-400 font-bold">
+                        {originalScale === 4.0
+                          ? 'Mega 8K (96px/cell)'
+                          : originalScale === 3.0
+                          ? 'Ultra HD 3× (72px/cell)'
+                          : originalScale === 2.0
+                          ? 'Super HD 2× (48px/cell) ★'
+                          : 'Native 1× (24px/cell)'}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-4 gap-1.5">
                       {[
-                        { label: 'Compact (6px)', scale: 0.25 },
-                        { label: 'Tactical (12px)', scale: 0.5 },
-                        { label: 'Native (24px)', scale: 1.0 },
+                        { label: '1× Native', scale: 1.0 },
+                        { label: '2× Super HD', scale: 2.0 },
+                        { label: '3× Ultra HD', scale: 3.0 },
+                        { label: '4× Mega 8K', scale: 4.0 },
                       ].map((item) => (
                         <button
                           key={item.scale}
                           onClick={() => setOriginalScale(item.scale)}
-                          className={`py-1.5 px-2 rounded-lg text-[10px] font-mono transition-colors ${
+                          className={`py-1.5 px-2 rounded-lg text-[10px] font-mono transition-colors cursor-pointer ${
                             originalScale === item.scale
-                              ? 'bg-emerald-950 border border-emerald-700 text-emerald-300 font-bold'
+                              ? 'bg-emerald-950 border border-emerald-600 text-emerald-300 font-bold shadow-xs'
                               : 'bg-neutral-900/70 border border-neutral-800 text-neutral-400 hover:text-white'
                           }`}
                         >
@@ -1091,9 +1116,9 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
               </div>
 
               <button
-                onClick={() => handleDownloadPng(1)}
+                onClick={() => handleDownloadPng(originalScale || 2)}
                 disabled={isTinyPngProcessing}
-                className="w-full px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-950/40 transition-all cursor-pointer font-['Rajdhani',sans-serif] hover:scale-101"
               >
                 {isTinyPngProcessing ? (
                   <>
@@ -1104,29 +1129,53 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
                   <>
                     <Download className="w-4 h-4" />
                     <span>
-                      Download .PNG Map Image ({canvasRef.current?.width || 0}×{canvasRef.current?.height || 0})
+                      Download {originalScale}× Super HD .PNG ({canvasRef.current?.width || 0}×{canvasRef.current?.height || 0})
                     </span>
                   </>
                 )}
               </button>
 
-              <div className="flex gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
-                  onClick={() => handleDownloadPng(2)}
+                  onClick={() => handleDownloadPng(1)}
                   disabled={isTinyPngProcessing}
-                  className="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-2 py-2 rounded-xl bg-[#12131d] hover:bg-[#1a1c2b] border border-[#26283b] text-slate-300 hover:text-white font-mono text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  title="Native 1x scale (24px/cell)"
                 >
-                  <Maximize2 className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Double (2× Scale)</span>
+                  <Download className="w-3.5 h-3.5 text-slate-400" />
+                  <span>1× Native</span>
                 </button>
 
                 <button
+                  onClick={() => handleDownloadPng(2)}
+                  disabled={isTinyPngProcessing}
+                  className="px-2 py-2 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/80 text-emerald-300 font-mono text-xs font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-xs"
+                  title="2x Super HD (48px/cell - Recommended)"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>2× Super HD ★</span>
+                </button>
+
+                <button
+                  onClick={() => handleDownloadPng(4)}
+                  disabled={isTinyPngProcessing}
+                  className="px-2 py-2 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-700/80 text-amber-300 font-mono text-xs font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-xs"
+                  title="4x Mega 8K Ultra (96px/cell)"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>4× Mega 8K</span>
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
                   onClick={handleOpenTinyPngCompressor}
-                  className="px-3 py-2 rounded-xl bg-black/60 hover:bg-[#1a080c] border border-[#3b0d13] text-amber-400 hover:text-amber-300 font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="w-full px-3 py-2 rounded-xl bg-black/60 hover:bg-[#1a080c] border border-[#3b0d13] text-amber-400 hover:text-amber-300 font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   title="Open in standalone TinyPNG compressor"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>TinyPNG Tool</span>
+                  <span>TinyPNG Compression Tool</span>
                 </button>
               </div>
 

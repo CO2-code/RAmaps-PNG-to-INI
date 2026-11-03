@@ -146,7 +146,7 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
               showOre: true,
               showWalls: true,
               showStructures: true,
-              scaleMultiplier: 1.0,
+              scaleMultiplier: 2.0, // High-density supersampling
             },
             offCanvas
           );
@@ -421,6 +421,7 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
                     onChange={(e) => setTargetDim(parseInt(e.target.value, 10))}
                     className="bg-black border border-[#3b0d13] text-white px-2 py-1 rounded text-xs focus:outline-none"
                   >
+                    <option value={1024}>1024 max px (Super Ultra Mega 8K HD)</option>
                     <option value={512}>512 max px (Ultra Super HD)</option>
                     <option value={256}>256 max px (CnCNet Full HD)</option>
                     <option value={192}>192 max px</option>

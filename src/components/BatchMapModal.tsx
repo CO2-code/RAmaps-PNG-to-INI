@@ -130,6 +130,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
   const [preparePreviewMode, setPreparePreviewMode] = useState<'inject_ini' | 'export_png' | 'none'>('inject_ini');
   const [prepareInjectFormat, setPrepareInjectFormat] = useState<'cncnet_lzo_24bit' | 'lcw_8bit'>('cncnet_lzo_24bit');
   const [prepareInjectSize, setPrepareInjectSize] = useState<number>(512);
+  const [prepareExportPngScale, setPrepareExportPngScale] = useState<number>(2.0);
 
   // --- Inject Previews Settings (Standard action) ---
   const [injectFormat, setInjectFormat] = useState<'cncnet_lzo_24bit' | 'lcw_8bit'>('cncnet_lzo_24bit');
@@ -137,7 +138,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
 
   // --- Render PNGs Settings (Standard action) ---
   const [renderEngine, setRenderEngine] = useState<'original' | 'vector'>('original');
-  const [renderScale, setRenderScale] = useState<number>(1.0);
+  const [renderScale, setRenderScale] = useState<number>(2.0);
   const [cropBounds, setCropBounds] = useState<boolean>(true);
   const [showOre, setShowOre] = useState<boolean>(true);
   const [showWalls, setShowWalls] = useState<boolean>(true);
@@ -453,7 +454,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
                   showOre: true,
                   showWalls: true,
                   showStructures: true,
-                  scaleMultiplier: 1.0,
+                  scaleMultiplier: 2.0, // High-density 2x Super HD supersampling for ultra sharp downsampled INI previews
                 },
                 offCanvas
               );
@@ -539,7 +540,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
                   showOre: true,
                   showWalls: true,
                   showStructures: true,
-                  scaleMultiplier: 1.0,
+                  scaleMultiplier: prepareExportPngScale, // 2x Super HD default (48px/cell)
                 },
                 offCanvas
               );
@@ -612,7 +613,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
                 showOre,
                 showWalls,
                 showStructures,
-                scaleMultiplier: 1.0,
+                scaleMultiplier: 2.0, // High-density supersampling
               },
               offCanvas
             );
@@ -1291,6 +1292,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
                             onChange={(e) => setAutoBatchHdSize(parseInt(e.target.value, 10))}
                             className="bg-[#080203] border border-amber-600/70 text-amber-200 rounded-lg px-2.5 py-1 text-xs font-mono font-semibold focus:outline-none cursor-pointer"
                           >
+                            <option value={1024}>1024 max px &mdash; Super Ultra Mega 8K HD (Extreme Detail)</option>
                             <option value={512}>512 max px &mdash; Ultra Super HD (Maximum Crispness &amp; Detail)</option>
                             <option value={256}>256 max px &mdash; CnCNet Full HD (Standard Lobby)</option>
                           </select>
@@ -1569,6 +1571,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
                               onChange={(e) => setPrepareInjectSize(parseInt(e.target.value, 10))}
                               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs text-slate-800 dark:text-white font-mono cursor-pointer"
                             >
+                              <option value={1024}>1024 max px (Super Ultra Mega 8K HD)</option>
                               <option value={512}>512 max px (Ultra Super HD · Maximum Crispness)</option>
                               <option value={256}>256 max px (CnCNet Full HD · Recommended)</option>
                               <option value={192}>192 max px (Balanced)</option>
@@ -1580,7 +1583,21 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
 
                       {/* Sub-settings when Companion .PNG is selected */}
                       {preparePreviewMode === 'export_png' && (
-                        <div className="pt-1 border-t border-slate-200 dark:border-slate-800">
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between gap-3 text-xs">
+                            <span className="text-slate-600 dark:text-slate-400 font-semibold text-[11px]">
+                              Companion PNG Resolution Scale:
+                            </span>
+                            <select
+                              value={prepareExportPngScale}
+                              onChange={(e) => setPrepareExportPngScale(parseFloat(e.target.value))}
+                              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs text-slate-800 dark:text-white font-mono cursor-pointer"
+                            >
+                              <option value={2.0}>2× Super HD (48px/cell · Recommended)</option>
+                              <option value={4.0}>4× Mega 8K Ultra (96px/cell · Extreme Quality)</option>
+                              <option value={1.0}>1× Native (24px/cell · Original)</option>
+                            </select>
+                          </div>
                           <div className="p-2.5 rounded-lg bg-black/40 border border-[#3b0d13] flex items-center justify-between gap-3 text-xs">
                             <div className="flex items-center gap-2">
                               <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -1646,6 +1663,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
                         onChange={(e) => setInjectSize(parseInt(e.target.value, 10))}
                         className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white font-mono cursor-pointer"
                       >
+                        <option value={1024}>1024 max px (Super Ultra Mega 8K HD · Extreme Detail)</option>
                         <option value={512}>512 max px (Ultra Super HD 512 · Maximum Detail)</option>
                         <option value={256}>256 max px (CnCNet Full HD 256 · Recommended)</option>
                         <option value={192}>192 max px (Balanced · ~450–700 lines)</option>
@@ -1692,11 +1710,12 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
                         <select
                           value={renderScale}
                           onChange={(e) => setRenderScale(parseFloat(e.target.value))}
-                          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white font-mono"
+                          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white font-mono cursor-pointer"
                         >
-                          <option value={1.0}>Native 24px (100% Full Res)</option>
+                          <option value={2.0}>2× Super HD (48px/cell · Recommended)</option>
+                          <option value={4.0}>4× Mega 8K Ultra (96px/cell · Extreme Quality)</option>
+                          <option value={1.0}>1× Native (24px/cell · 100% Full Res)</option>
                           <option value={0.5}>Tactical 12px (50%)</option>
-                          <option value={0.25}>Compact 6px (25%)</option>
                         </select>
                       </div>
                     </div>
