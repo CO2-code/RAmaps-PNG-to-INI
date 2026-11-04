@@ -192,6 +192,7 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
           dithering: false,
           compressionOptimization: 'max',
           maintainAspectRatio: true,
+          sharpening: true,
         });
 
         previewToInject = previewResult.fullIniText;
@@ -217,9 +218,10 @@ export const MapInjectorModal: React.FC<MapInjectorModalProps> = ({
           includePreviewSection: true,
           colorNoiseReduction: false,
           targetLineBudget: undefined,
-          dithering: true,
+          dithering: false,
           compressionOptimization: 'max',
           maintainAspectRatio: true,
+          sharpening: true,
         });
 
         previewToInject = previewResult.fullIniText;

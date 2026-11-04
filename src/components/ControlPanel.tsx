@@ -7,7 +7,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { ConversionOptions, PaletteId } from '../types';
-import { calculateDimensionsForLineBudget } from '../lib/formatters';
+import { calculateDimensionsForLineBudget, calculateMapHdDimensions } from '../lib/formatters';
 
 interface ControlPanelProps {
   options: ConversionOptions;
@@ -26,6 +26,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(defaultOpen);
   const isCncNetLzo = options.encoding === 'cncnet_lzo_24bit';
+
+  const safeSW = sourceWidth > 0 ? sourceWidth : 128;
+  const safeSH = sourceHeight > 0 ? sourceHeight : 128;
+
+  const dim96 = calculateMapHdDimensions(safeSW, safeSH, 96);
+  const dim128 = calculateMapHdDimensions(safeSW, safeSH, 128);
+  const dim192 = calculateMapHdDimensions(safeSW, safeSH, 192);
+  const dim256 = calculateMapHdDimensions(safeSW, safeSH, 256);
+  const dim512 = calculateMapHdDimensions(safeSW, safeSH, 512);
+  const dim1024 = calculateMapHdDimensions(safeSW, safeSH, 1024);
 
   // Handle proportional aspect ratio change
   const handleWidthChange = (newWidth: number) => {
@@ -72,12 +82,29 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       onChange({ width: maxDimension, height: maxDimension });
       return;
     }
-    const maxSource = Math.max(sourceWidth, sourceHeight);
-    const scale = Math.min(1, maxDimension / maxSource);
-    const targetW = Math.max(16, Math.round(sourceWidth * scale));
-    const targetH = Math.max(16, Math.round(sourceHeight * scale));
+    const { width: targetW, height: targetH } = calculateMapHdDimensions(sourceWidth, sourceHeight, maxDimension);
     onChange({ width: targetW, height: targetH });
   };
+
+  const applyXccNative = () => {
+    if (sourceWidth <= 0 || sourceHeight <= 0) return;
+    onChange({
+      width: sourceWidth,
+      height: sourceHeight,
+      encoding: 'cncnet_lzo_24bit',
+      lineLength: 70,
+      colorNoiseReduction: false,
+      includePreviewSection: true,
+      targetLineBudget: undefined,
+    });
+  };
+
+  const isXcc1to1 =
+    sourceWidth > 0 &&
+    sourceHeight > 0 &&
+    options.width === sourceWidth &&
+    options.height === sourceHeight &&
+    options.encoding === 'cncnet_lzo_24bit';
 
   return (
     <div className="bg-[#0c0d12] border border-[#2f1015] rounded-2xl shadow-[0_4px_25px_rgba(0,0,0,0.7)] transition-all overflow-hidden">
@@ -227,16 +254,44 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 Resolution Presets
               </label>
               <div className="grid grid-cols-2 gap-2">
+                {/* 1:1 XCC Mixer Direct Port Button */}
+                <button
+                  type="button"
+                  onClick={applyXccNative}
+                  className={`col-span-2 p-2.5 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between ${
+                    isXcc1to1
+                      ? 'border-amber-500 bg-[#1e140a] text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)] font-semibold'
+                      : 'border-amber-900/60 hover:border-amber-600/80 bg-[#140d0a] text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                      <span>⚡ XCC Mixer 1:1 Native</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-950 border border-amber-800 text-amber-300">
+                        {sourceWidth} × {sourceHeight} px
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Exact 1:1 port of OlafvdSpek/xcc copy_as_map_ts_preview (No downscaling)
+                    </div>
+                  </div>
+                  {isXcc1to1 && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800">
+                      Active
+                    </span>
+                  )}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => applyPresetDimension(96)}
                   className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                    options.width === 96 && options.height === 96
+                    (options.width === dim96.width && options.height === dim96.height) || Math.max(options.width, options.height) === 96
                       ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
                       : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                 >
-                  <div className="text-xs font-bold text-slate-100">96 × 96</div>
+                  <div className="text-xs font-bold text-slate-100">{dim96.width} × {dim96.height}</div>
                   <div className="text-[10px] text-slate-400">Fast Lobby (~800 lines)</div>
                 </button>
 
@@ -244,12 +299,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   type="button"
                   onClick={() => applyPresetDimension(128)}
                   className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                    options.width === 128 && options.height === 128
+                    (options.width === dim128.width && options.height === dim128.height) || Math.max(options.width, options.height) === 128
                       ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
                       : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                 >
-                  <div className="text-xs font-bold text-slate-100">128 × 128</div>
+                  <div className="text-xs font-bold text-slate-100">{dim128.width} × {dim128.height}</div>
                   <div className="text-[10px] text-slate-400">Sharp (~1,400 lines)</div>
                 </button>
 
@@ -257,12 +312,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   type="button"
                   onClick={() => applyPresetDimension(192)}
                   className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                    options.width === 192 && options.height === 192
+                    (options.width === dim192.width && options.height === dim192.height) || Math.max(options.width, options.height) === 192
                       ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
                       : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                 >
-                  <div className="text-xs font-bold text-slate-100">192 × 192</div>
+                  <div className="text-xs font-bold text-slate-100">{dim192.width} × {dim192.height}</div>
                   <div className="text-[10px] text-slate-400">High Res (~3,000 lines)</div>
                 </button>
 
@@ -270,12 +325,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   type="button"
                   onClick={() => applyPresetDimension(256)}
                   className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                    Math.max(options.width, options.height) === 256
+                    (options.width === dim256.width && options.height === dim256.height) || Math.max(options.width, options.height) === 256
                       ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
                       : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                 >
-                  <div className="text-xs font-bold text-slate-100">256 max px</div>
+                  <div className="text-xs font-bold text-slate-100">{dim256.width} × {dim256.height}</div>
                   <div className="text-[10px] text-slate-400">CnCNet Full HD (~5k)</div>
                 </button>
 
@@ -283,12 +338,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   type="button"
                   onClick={() => applyPresetDimension(512)}
                   className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                    Math.max(options.width, options.height) === 512
+                    (options.width === dim512.width && options.height === dim512.height) || Math.max(options.width, options.height) === 512
                       ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
                       : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                 >
-                  <div className="text-xs font-bold text-emerald-400">512 max px</div>
+                  <div className="text-xs font-bold text-emerald-400">{dim512.width} × {dim512.height}</div>
                   <div className="text-[10px] text-slate-400">Ultra Super HD</div>
                 </button>
 
@@ -296,12 +351,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   type="button"
                   onClick={() => applyPresetDimension(1024)}
                   className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                    Math.max(options.width, options.height) === 1024
+                    (options.width === dim1024.width && options.height === dim1024.height) || Math.max(options.width, options.height) === 1024
                       ? 'border-red-600 bg-[#0f1019] text-slate-100 shadow-2xs font-semibold'
                       : 'border-[#33141a] hover:border-slate-300 dark:hover:border-slate-600 bg-white/70 dark:bg-slate-800/60 text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                 >
-                  <div className="text-xs font-bold text-amber-400">1024 max px</div>
+                  <div className="text-xs font-bold text-amber-400">{dim1024.width} × {dim1024.height}</div>
                   <div className="text-[10px] text-slate-400">Mega 8K Ultra</div>
                 </button>
               </div>
@@ -363,7 +418,25 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 Compression & Filtering
               </label>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
+                <label className="flex items-center justify-between text-xs text-slate-300 cursor-pointer p-2 rounded-lg bg-[#11131c] border border-emerald-900/40 hover:border-emerald-700/60 transition-colors">
+                  <div className="flex flex-col pr-2">
+                    <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                      <span>Ultra-HD Detail Sharpener</span>
+                      <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-800">Bicubic Sharper</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">
+                      Restores razor-sharp edge contrast for trees, ore, cliffs &amp; roads on downscaled maps
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={options.sharpening !== false}
+                    onChange={(e) => onChange({ sharpening: e.target.checked })}
+                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer shrink-0"
+                  />
+                </label>
+
                 <label className="flex items-center justify-between text-xs text-slate-300 cursor-pointer">
                   <span>Floyd-Steinberg Dithering</span>
                   <input
@@ -378,7 +451,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   <span>Color Noise Filter (reduces line count)</span>
                   <input
                     type="checkbox"
-                    checked={options.colorNoiseReduction !== false}
+                    checked={options.colorNoiseReduction === true}
                     onChange={(e) => onChange({ colorNoiseReduction: e.target.checked })}
                     className="w-4 h-4 accent-slate-900 dark:accent-red-500 rounded cursor-pointer"
                   />

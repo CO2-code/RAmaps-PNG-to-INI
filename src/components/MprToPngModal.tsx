@@ -144,11 +144,15 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
             : 'temperat'
         );
         const canvas = canvasRef.current;
-        canvas.width = decoded.width;
-        canvas.height = decoded.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.putImageData(decoded.imageData, 0, 0);
+        const w = decoded.imageData?.width || decoded.width;
+        const h = decoded.imageData?.height || decoded.height;
+        if (w > 0 && h > 0) {
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx && decoded.imageData) {
+            ctx.putImageData(decoded.imageData, 0, 0);
+          }
         }
       } catch (err) {
         console.warn('Failed to decode embedded preview:', err);
@@ -374,13 +378,15 @@ export const MprToPngModal: React.FC<MprToPngModalProps> = ({
       }
     }
 
-    const url = exportCanvas.toDataURL('image/png');
+    const blob = await canvasToBlob(exportCanvas);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = baseDownloadName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   const handleOpenTinyPngCompressor = async () => {

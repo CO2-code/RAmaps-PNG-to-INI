@@ -11,20 +11,62 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
   sourceCanvas,
   result,
 }) => {
+  const sourceCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const resultCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [zoom, setZoom] = useState<number>(1);
   const [pixelated] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'split' | 'reconstructed' | 'source'>('split');
 
-  // Draw quantized image data on result canvas
+  // Render source canvas directly without allocating giant base64 data URLs
+  useEffect(() => {
+    if (!sourceCanvas || !sourceCanvasRef.current) return;
+    const canvas = sourceCanvasRef.current;
+    canvas.width = sourceCanvas.width;
+    canvas.height = sourceCanvas.height;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      try {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(sourceCanvas, 0, 0);
+      } catch (err) {
+        console.warn('Failed to draw source canvas to preview:', err);
+      }
+    }
+  }, [sourceCanvas, viewMode]);
+
+  // Draw quantized image data on result canvas safely
   useEffect(() => {
     if (!result || !resultCanvasRef.current) return;
     const canvas = resultCanvasRef.current;
-    canvas.width = result.targetWidth;
-    canvas.height = result.targetHeight;
+    const qData = result.quantizedImageData;
+    if (!qData) return;
+
+    const w = qData.width || result.targetWidth;
+    const h = qData.height || result.targetHeight;
+    if (!w || !h || w <= 0 || h <= 0) return;
+
+    canvas.width = w;
+    canvas.height = h;
+
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.putImageData(result.quantizedImageData, 0, 0);
+      try {
+        ctx.putImageData(qData, 0, 0);
+      } catch (err) {
+        console.warn('putImageData failed, drawing via offscreen canvas fallback:', err);
+        try {
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = qData.width;
+          tempCanvas.height = qData.height;
+          const tempCtx = tempCanvas.getContext('2d');
+          if (tempCtx) {
+            tempCtx.putImageData(qData, 0, 0);
+            ctx.drawImage(tempCanvas, 0, 0, w, h);
+          }
+        } catch (fallbackErr) {
+          console.error('Canvas preview fallback failed:', fallbackErr);
+        }
+      }
     }
   }, [result]);
 
@@ -197,9 +239,8 @@ export const PreviewViewport: React.FC<PreviewViewportProps> = ({
                   maxHeight: '380px',
                 }}
               >
-                <img
-                  src={sourceCanvas.toDataURL()}
-                  alt="Source"
+                <canvas
+                  ref={sourceCanvasRef}
                   className="max-h-[340px] object-contain block"
                   style={{
                     width: `${result.targetWidth * zoom}px`,

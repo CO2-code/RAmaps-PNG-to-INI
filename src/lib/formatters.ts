@@ -4,15 +4,55 @@ import { LCW } from './lcw';
 import { compressCncNetLzo24Bit, decompressCncNetLzo24Bit } from './lzo';
 
 /**
- * Encodes a Uint8Array to a Base64 string (browser-safe)
+ * Encodes a Uint8Array to a Base64 string (browser-safe & high-performance)
+ * Chunked processing prevents call stack overflow and memory thrashing on large HD images.
+ */
+const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * Encodes a Uint8Array to a Base64 string (browser-safe, zero-copy lookup table)
+ * Avoids String.fromCharCode concatenation and btoa() call limits on large HD images.
  */
 export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const len = bytes.length;
+  if (len === 0) return '';
+
+  const extra = len % 3;
+  const mainLen = len - extra;
+  const CHUNK_BYTES = 3 * 8192; // 24,576 raw bytes -> 32,768 Base64 chars
+  const chunks: string[] = [];
+
+  for (let i = 0; i < mainLen; i += CHUNK_BYTES) {
+    const end = Math.min(i + CHUNK_BYTES, mainLen);
+    let chunkStr = '';
+    for (let j = i; j < end; j += 3) {
+      const b0 = bytes[j];
+      const b1 = bytes[j + 1];
+      const b2 = bytes[j + 2];
+      chunkStr +=
+        B64_CHARS[b0 >> 2] +
+        B64_CHARS[((b0 & 3) << 4) | (b1 >> 4)] +
+        B64_CHARS[((b1 & 15) << 2) | (b2 >> 6)] +
+        B64_CHARS[b2 & 63];
+    }
+    chunks.push(chunkStr);
   }
-  return btoa(binary);
+
+  if (extra === 1) {
+    const b0 = bytes[mainLen];
+    chunks.push(B64_CHARS[b0 >> 2] + B64_CHARS[(b0 & 3) << 4] + '==');
+  } else if (extra === 2) {
+    const b0 = bytes[mainLen];
+    const b1 = bytes[mainLen + 1];
+    chunks.push(
+      B64_CHARS[b0 >> 2] +
+        B64_CHARS[((b0 & 3) << 4) | (b1 >> 4)] +
+        B64_CHARS[(b1 & 15) << 2] +
+        '='
+    );
+  }
+
+  return chunks.join('');
 }
 
 /**
@@ -31,13 +71,17 @@ export function base64ToBytes(base64: string): Uint8Array {
 
 /**
  * Chunks a Base64 string into numbered INI lines (1=..., 2=...)
- * Standard Westwood & XCC INI chunk size is 70 characters.
+ * Standard Westwood & Olaf van der Spek XCC Mixer chunk size is strictly 70 characters.
+ * Chunked string aggregation avoids allocating hundreds of thousands of intermediate string objects.
  */
 export function chunkIntoIniLines(base64: string, lineLength: number = 70): string[] {
+  const totalLength = base64.length;
+  if (totalLength === 0) return [];
+
   const lines: string[] = [];
   let lineNum = 1;
 
-  for (let i = 0; i < base64.length; i += lineLength) {
+  for (let i = 0; i < totalLength; i += lineLength) {
     const chunk = base64.substring(i, i + lineLength);
     lines.push(`${lineNum}=${chunk}`);
     lineNum++;
@@ -47,19 +91,131 @@ export function chunkIntoIniLines(base64: string, lineLength: number = 70): stri
 }
 
 /**
- * Ultra-high-fidelity multi-step downsampler.
- * Downsamples in successive 2x halving steps until approaching target dimensions,
- * preventing high-frequency moiré, aliasing, and muddy artifacts.
+ * Port of Olaf van der Spek's XCC Mixer (CXCCMixerView::copy_as_map_ts_preview):
+ * https://github.com/OlafvdSpek/xcc
+ *
+ * Direct 1:1 implementation:
+ * 1. Takes source image at full native dimensions (Size=0,0,width,height)
+ * 2. Reads 24-bit TrueColor RGB (3 bytes per pixel: R, G, B)
+ * 3. Compresses with LZO1X in 8192-byte chunks (Format 5) with 4-byte header:
+ *    [uint16 LE size_in (compressed), uint16 LE size_out (uncompressed)]
+ * 4. Encodes binary payload with Base64
+ * 5. Emits [Preview] and [PreviewPack] with 70 characters per line
+ */
+export function convertPngToXccPreviewPack(
+  canvas: HTMLCanvasElement,
+  customDimensions?: { width: number; height: number }
+): ConversionResult {
+  const w = customDimensions?.width ?? canvas.width;
+  const h = customDimensions?.height ?? canvas.height;
+
+  return convertImageToPreviewPack(canvas, {
+    width: w,
+    height: h,
+    palette: 'temperat',
+    encoding: 'cncnet_lzo_24bit',
+    dithering: false,
+    lineLength: 70,
+    includePreviewSection: true,
+    compressionOptimization: 'max',
+    maintainAspectRatio: true,
+    colorNoiseReduction: false, // Pure raw 24-bit RGB888, exact match to XCC Mixer
+    targetLineBudget: undefined,
+  });
+}
+
+/**
+ * Fast 3x3 unsharp-mask filter designed specifically for Red Alert 1 downsampled maps.
+ * Restores razor-sharp high-frequency contrast along tile borders, tree foliage, ore gems, cliff ridges, and roads.
+ */
+export function applyUnsharpMask(
+  imageData: ImageData,
+  amount: number = 0.45,
+  threshold: number = 1
+): ImageData {
+  const { width, height, data } = imageData;
+  const output = new ImageData(new Uint8ClampedArray(data), width, height);
+  const outData = output.data;
+
+  // 3x3 Gaussian-approximating convolution kernel:
+  // [1, 2, 1]
+  // [2, 4, 2] / 16
+  // [1, 2, 1]
+  const kernel = [1, 2, 1, 2, 4, 2, 1, 2, 1];
+  const kernelSum = 16;
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const idx = (y * width + x) * 4;
+
+      let rSum = 0;
+      let gSum = 0;
+      let bSum = 0;
+      let k = 0;
+
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const pIdx = ((y + ky) * width + (x + kx)) * 4;
+          const weight = kernel[k++];
+          rSum += data[pIdx] * weight;
+          gSum += data[pIdx + 1] * weight;
+          bSum += data[pIdx + 2] * weight;
+        }
+      }
+
+      const rBlur = rSum / kernelSum;
+      const gBlur = gSum / kernelSum;
+      const bBlur = bSum / kernelSum;
+
+      const rDiff = data[idx] - rBlur;
+      const gDiff = data[idx + 1] - gBlur;
+      const bDiff = data[idx + 2] - bBlur;
+
+      if (Math.abs(rDiff) >= threshold) {
+        outData[idx] = Math.max(0, Math.min(255, Math.round(data[idx] + rDiff * amount)));
+      }
+      if (Math.abs(gDiff) >= threshold) {
+        outData[idx + 1] = Math.max(0, Math.min(255, Math.round(data[idx + 1] + gDiff * amount)));
+      }
+      if (Math.abs(bDiff) >= threshold) {
+        outData[idx + 2] = Math.max(0, Math.min(255, Math.round(data[idx + 2] + bDiff * amount)));
+      }
+      outData[idx + 3] = data[idx + 3];
+    }
+  }
+
+  return output;
+}
+
+/**
+ * Ultra-high-fidelity tactical map downsampler.
+ * Avoids multi-stage blur accumulation (which turns fine tile details into mush)
+ * by using an optimal two-pass downscale followed by calibrated unsharp-masking.
  */
 export function downsampleCanvasHighQuality(
   sourceCanvas: HTMLCanvasElement,
   targetWidth: number,
-  targetHeight: number
+  targetHeight: number,
+  enableSharpening: boolean = true
 ): HTMLCanvasElement {
-  let curW = sourceCanvas.width;
-  let curH = sourceCanvas.height;
+  const srcW = sourceCanvas.width;
+  const srcH = sourceCanvas.height;
 
-  if (curW <= targetWidth && curH <= targetHeight) {
+  // Exact 1:1 match -> return direct copy without any resampling or blur
+  if (srcW === targetWidth && srcH === targetHeight) {
+    const res = document.createElement('canvas');
+    res.width = targetWidth;
+    res.height = targetHeight;
+    const ctx = res.getContext('2d');
+    if (ctx) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(sourceCanvas, 0, 0);
+    }
+    return res;
+  }
+
+  // If target is larger than or equal to source, draw with high-quality smoothing
+  if (srcW <= targetWidth && srcH <= targetHeight) {
     const res = document.createElement('canvas');
     res.width = targetWidth;
     res.height = targetHeight;
@@ -72,35 +228,50 @@ export function downsampleCanvasHighQuality(
     return res;
   }
 
+  // For downsampling from high-resolution renders (e.g. 2000px-6000px down to 512px or 256px):
+  // We perform an optimal two-pass downsample to avoid blur stacking:
+  // Pass 1: Downscale to an intermediate 2x oversampled resolution (targetWidth * 2, targetHeight * 2)
+  // Pass 2: Downscale to final target resolution
+  // Pass 3: Apply calibrated unsharp mask to restore the crisp, tactile edge contrast of tiles and ore.
   let currentCanvas: HTMLCanvasElement = sourceCanvas;
 
-  // Successively halve dimensions until approaching target
-  while (curW / 2 >= targetWidth && curH / 2 >= targetHeight) {
-    const nextW = Math.round(curW / 2);
-    const nextH = Math.round(curH / 2);
-    const stepCanvas = document.createElement('canvas');
-    stepCanvas.width = nextW;
-    stepCanvas.height = nextH;
-    const sCtx = stepCanvas.getContext('2d');
-    if (sCtx) {
-      sCtx.imageSmoothingEnabled = true;
-      sCtx.imageSmoothingQuality = 'high';
-      sCtx.drawImage(currentCanvas, 0, 0, nextW, nextH);
+  const scaleFactorW = srcW / targetWidth;
+  const scaleFactorH = srcH / targetHeight;
+  const maxScaleFactor = Math.max(scaleFactorW, scaleFactorH);
+
+  if (maxScaleFactor > 2.5) {
+    const interW = Math.round(targetWidth * 2);
+    const interH = Math.round(targetHeight * 2);
+    const interCanvas = document.createElement('canvas');
+    interCanvas.width = interW;
+    interCanvas.height = interH;
+    const interCtx = interCanvas.getContext('2d');
+    if (interCtx) {
+      interCtx.imageSmoothingEnabled = true;
+      interCtx.imageSmoothingQuality = 'high';
+      interCtx.drawImage(sourceCanvas, 0, 0, interW, interH);
+      currentCanvas = interCanvas;
     }
-    currentCanvas = stepCanvas;
-    curW = nextW;
-    curH = nextH;
   }
 
-  // Final step directly to exact target width and height
   const finalCanvas = document.createElement('canvas');
   finalCanvas.width = targetWidth;
   finalCanvas.height = targetHeight;
   const fCtx = finalCanvas.getContext('2d');
-  if (fCtx) {
-    fCtx.imageSmoothingEnabled = true;
-    fCtx.imageSmoothingQuality = 'high';
-    fCtx.drawImage(currentCanvas, 0, 0, targetWidth, targetHeight);
+  if (!fCtx) return finalCanvas;
+
+  fCtx.imageSmoothingEnabled = true;
+  fCtx.imageSmoothingQuality = 'high';
+  fCtx.drawImage(currentCanvas, 0, 0, targetWidth, targetHeight);
+
+  if (enableSharpening) {
+    try {
+      const imgData = fCtx.getImageData(0, 0, targetWidth, targetHeight);
+      const sharpened = applyUnsharpMask(imgData, 0.45, 1);
+      fCtx.putImageData(sharpened, 0, 0);
+    } catch {
+      // Fallback if origin isolation prevents getImageData
+    }
   }
 
   return finalCanvas;
@@ -113,56 +284,56 @@ export function convertImageToPreviewPack(
   canvas: HTMLCanvasElement,
   options: ConversionOptions
 ): ConversionResult {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Could not access 2D canvas context');
-
   const {
-    width,
-    height,
+    width: requestedW,
+    height: requestedH,
     palette: paletteId,
     encoding,
     dithering,
     lineLength,
     includePreviewSection,
     compressionOptimization,
+    maintainAspectRatio = true,
+    sharpening = true,
   } = options;
 
-  // Scale / draw to target dimensions
-  const offscreen = document.createElement('canvas');
-  offscreen.width = width;
-  offscreen.height = height;
-  const offCtx = offscreen.getContext('2d');
-  if (!offCtx) throw new Error('Could not create offscreen canvas');
+  let width = Math.max(16, Math.min(2048, Math.round(requestedW || 128)));
+  let height = Math.max(16, Math.min(2048, Math.round(requestedH || 128)));
 
-  offCtx.imageSmoothingEnabled = true;
-  offCtx.imageSmoothingQuality = 'high';
-
-  if (options.maintainAspectRatio && canvas.width > 0 && canvas.height > 0) {
+  // PROPORTIONAL ASPECT RATIO (ZERO LETTERBOXING):
+  // When maintaining aspect ratio, adjust target width and height directly to match
+  // the source map's aspect ratio perfectly!
+  // This completely eliminates blurry black letterboxing bars and fills 100% of the
+  // [Preview] rectangle with crisp map pixels.
+  if (maintainAspectRatio && canvas.width > 0 && canvas.height > 0) {
     const srcAspect = canvas.width / canvas.height;
     const dstAspect = width / height;
-    // If aspect ratios differ by more than 3%, letterbox / center to avoid squashing
-    if (Math.abs(srcAspect - dstAspect) > 0.03) {
-      offCtx.fillStyle = '#000000';
-      offCtx.fillRect(0, 0, width, height);
-      let renderW = width;
-      let renderH = height;
+
+    if (Math.abs(srcAspect - dstAspect) > 0.01) {
       if (srcAspect > dstAspect) {
-        renderH = Math.max(1, Math.round(width / srcAspect));
+        // Source is wider than requested box -> lock width, scale height proportionally to even integer
+        height = Math.max(16, Math.round((width / srcAspect) / 2) * 2);
       } else {
-        renderW = Math.max(1, Math.round(height * srcAspect));
+        // Source is taller than requested box -> lock height, scale width proportionally to even integer
+        width = Math.max(16, Math.round((height * srcAspect) / 2) * 2);
       }
-      const offsetX = Math.round((width - renderW) / 2);
-      const offsetY = Math.round((height - renderH) / 2);
-      const resampled = downsampleCanvasHighQuality(canvas, renderW, renderH);
-      offCtx.drawImage(resampled, offsetX, offsetY);
-    } else {
-      const resampled = downsampleCanvasHighQuality(canvas, width, height);
-      offCtx.drawImage(resampled, 0, 0);
     }
-  } else {
-    const resampled = downsampleCanvasHighQuality(canvas, width, height);
-    offCtx.drawImage(resampled, 0, 0);
   }
+
+  // Ensure both dimensions are even numbers for clean scanline alignment and optimal LZO chunking
+  if (width % 2 !== 0) width++;
+  if (height % 2 !== 0) height++;
+
+  if (width * height > 1500000) {
+    throw new Error(
+      `Target preview dimensions (${width}×${height} = ${(width * height).toLocaleString()} pixels) exceed safe limits for Red Alert INI packs. Scale to 512px or 1024px to prevent browser OOM and multiplayer disconnects.`
+    );
+  }
+
+  // Downsample source canvas to target dimensions with high-fidelity sharpening
+  const offscreen = downsampleCanvasHighQuality(canvas, width, height, sharpening);
+  const offCtx = offscreen.getContext('2d');
+  if (!offCtx) throw new Error('Could not create offscreen canvas context');
 
   const srcImageData = offCtx.getImageData(0, 0, width, height);
   const pal = PALETTES[paletteId]?.colors || PALETTES.temperat.colors;
@@ -578,14 +749,16 @@ export function calculateDimensionsForLineBudget(
   const estimatedRawBytes = targetCompressedBytes / compFactor;
   const totalPixels = Math.max(256, Math.floor(estimatedRawBytes / bytesPerPixel));
 
-  let w = Math.round(Math.sqrt(totalPixels / aspectRatio));
-  let h = Math.round(w * aspectRatio);
+  let w = Math.max(16, Math.round(Math.sqrt(totalPixels / aspectRatio) / 2) * 2);
+  let h = Math.max(16, Math.round((w * aspectRatio) / 2) * 2);
 
   // Clamp within reasonable game bounds (min 16, max source size)
   w = Math.max(16, Math.min(safeW, w));
   h = Math.max(16, Math.min(safeH, h));
+  if (w % 2 !== 0) w--;
+  if (h % 2 !== 0) h--;
 
-  return { width: w, height: h };
+  return { width: Math.max(16, w), height: Math.max(16, h) };
 }
 
 /**

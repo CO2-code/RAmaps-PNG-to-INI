@@ -16,6 +16,7 @@ export interface ConversionOptions {
   maintainAspectRatio: boolean;
   colorNoiseReduction?: boolean; // Smooths subtle RGB noise to boost LZO compression and reduce line counts
   targetLineBudget?: number; // Optional target max lines for auto-scaling
+  sharpening?: boolean; // Restores crisp high-definition edge contrast on downscaled maps
 }
 
 export interface ConversionResult {

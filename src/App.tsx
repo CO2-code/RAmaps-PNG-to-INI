@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, X, Check, Compass, FolderKanban, Sliders, ArrowLeft, HelpCircle } from 'lucide-react';
+import { ShieldCheck, X, Check, Compass, FolderKanban, Sliders, ArrowLeft, HelpCircle, AlertTriangle } from 'lucide-react';
 import { LauncherHome } from './components/LauncherHome';
 import { ImageUploader } from './components/ImageUploader';
 import { ControlPanel } from './components/ControlPanel';
@@ -19,13 +19,14 @@ const DEFAULT_OPTIONS: ConversionOptions = {
   height: 512,
   palette: 'temperat',
   encoding: 'cncnet_lzo_24bit', // Default: xna-cncnet-client & XCC Mixer compatible!
-  dithering: true,
+  dithering: false, // Dithering off for 24-bit TrueColor to maintain pristine sharpness
   lineLength: 70,
   includePreviewSection: true,
   compressionOptimization: 'max',
   maintainAspectRatio: true,
   colorNoiseReduction: false, // Pure 24-bit TrueColor RGB888, zero noise truncation for highest fidelity
   targetLineBudget: undefined, // Highest HD settings regardless of line quantity
+  sharpening: true, // Bicubic Sharper unsharp mask enabled by default
 };
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
   const [currentFilename, setCurrentFilename] = useState<string>('');
   const [options, setOptions] = useState<ConversionOptions>(DEFAULT_OPTIONS);
   const [result, setResult] = useState<ConversionResult | null>(null);
+  const [conversionError, setConversionError] = useState<string | null>(null);
   const [autoScaledNotice, setAutoScaledNotice] = useState<{
     originalW: number;
     originalH: number;
@@ -54,29 +56,53 @@ export default function App() {
   useEffect(() => {
     if (!sourceCanvas) {
       setResult(null);
+      setConversionError(null);
       return;
     }
     try {
       const res = convertImageToPreviewPack(sourceCanvas, options);
       setResult(res);
-    } catch (err) {
-      console.error('Failed to convert image to PreviewPack:', err);
+      setConversionError(null);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string'
+          ? err
+          : String(err) || 'Conversion failed';
+      console.error('Failed to convert image to PreviewPack:', msg);
+      setConversionError(msg);
+      setResult(null);
     }
   }, [sourceCanvas, options]);
 
   const handleImageLoaded = (canvas: HTMLCanvasElement, filename: string) => {
     setSourceCanvas(canvas);
     setCurrentFilename(filename);
+    setConversionError(null);
 
-    const { width: targetW, height: targetH } = calculateMapHdDimensions(canvas.width, canvas.height, 512);
+    // If canvas is already within compact/standard dimensions (<= 512px), use 1:1 exact native
+    // If canvas is large (e.g. 2000px - 6000px full map render), automatically set 512px Ultra HD
+    // to give crystal-clear lobby preview while preventing multi-gigabyte browser heap crashes.
+    const isLarge = canvas.width > 512 || canvas.height > 512;
+    const { width: targetW, height: targetH } = isLarge
+      ? calculateMapHdDimensions(canvas.width, canvas.height, 512)
+      : { width: canvas.width, height: canvas.height };
+
     setOptions((prev) => ({
       ...prev,
       width: targetW,
       height: targetH,
-      colorNoiseReduction: false,
+      encoding: 'cncnet_lzo_24bit',
+      lineLength: 70,
+      includePreviewSection: true,
+      colorNoiseReduction: false, // Pure 24-bit TrueColor RGB888, zero noise truncation
       targetLineBudget: undefined,
       compressionOptimization: 'max',
+      sharpening: true,
+      maintainAspectRatio: true,
     }));
+
     setAutoScaledNotice({
       originalW: canvas.width,
       originalH: canvas.height,
@@ -191,61 +217,148 @@ export default function App() {
             onOpenMprModal={() => setIsMprModalOpen(true)}
           />
 
-          {/* Auto-Scaled Notice Banner if uploaded image was larger than 256px */}
-          {autoScaledNotice && (
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0e1812] border border-emerald-800/80 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+          {/* XCC Mixer 1:1 Port Status & Quick Presets Banner */}
+          {sourceCanvas && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-[#130d07] border border-amber-800/80 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
               <div className="flex items-start gap-3.5 text-slate-200">
-                <div className="p-2 rounded-xl bg-emerald-950/80 border border-emerald-700 text-emerald-400 shrink-0">
+                <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-700 text-amber-400 shrink-0">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <div className="font-bold text-white text-sm flex items-center gap-2">
-                    <span>Auto-Optimized to {autoScaledNotice.scaledW}×{autoScaledNotice.scaledH} (~800–1,100 lines)</span>
-                    <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 border border-emerald-700 px-2 py-0.5 rounded font-bold">
-                      CnCNet Standard
+                  <div className="font-bold text-white text-sm flex items-center gap-2 flex-wrap">
+                    <span>OlafvdSpek/xcc 1:1 Port Active:</span>
+                    <span className="text-[11px] font-mono text-amber-300 bg-amber-950 border border-amber-700 px-2 py-0.5 rounded font-bold">
+                      {options.width}×{options.height} px ({options.width === sourceCanvas.width && options.height === sourceCanvas.height ? '100% Native XCC' : 'Scaled'})
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-1.5 py-0.2 rounded">
+                      24-bit TrueColor LZO
                     </span>
                   </div>
                   <p className="text-slate-300 text-xs leading-relaxed max-w-2xl font-mono">
-                    Uploaded image was <strong className="text-white">{autoScaledNotice.originalW}×{autoScaledNotice.originalH}</strong> (which would generate 23,000+ lines and lag in-game lobby downloads).
-                    It was automatically scaled down to <strong className="text-emerald-300">&le; 256px</strong> for instant player downloads.
+                    Direct port of <strong className="text-amber-400 font-mono">CXCCMixerView::copy_as_map_ts_preview</strong> from{' '}
+                    <a
+                      href="https://github.com/OlafvdSpek/xcc"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-amber-400 underline hover:text-amber-300"
+                    >
+                      OlafvdSpek/xcc
+                    </a>
+                    . 8192-byte LZO1X chunks, 4-byte headers, pure 24-bit RGB888, 70 chars per line.
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                {sourceCanvas.width <= 1024 && sourceCanvas.height <= 1024 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOptions((prev) => ({
+                        ...prev,
+                        width: sourceCanvas.width,
+                        height: sourceCanvas.height,
+                        encoding: 'cncnet_lzo_24bit',
+                        colorNoiseReduction: false,
+                        targetLineBudget: undefined,
+                      }));
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                      options.width === sourceCanvas.width && options.height === sourceCanvas.height
+                        ? 'bg-amber-600 text-black shadow-xs'
+                        : 'bg-[#151722] hover:bg-[#1e202f] border border-amber-800/80 text-amber-300'
+                    }`}
+                    title="Preserve exact 1:1 native dimensions without downscaling"
+                  >
+                    ⚡ XCC 1:1 ({sourceCanvas.width}×{sourceCanvas.height})
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { width: tw, height: th } = calculateMapHdDimensions(sourceCanvas.width, sourceCanvas.height, 1024);
+                      setOptions((prev) => ({
+                        ...prev,
+                        width: tw,
+                        height: th,
+                        encoding: 'cncnet_lzo_24bit',
+                        colorNoiseReduction: false,
+                        targetLineBudget: undefined,
+                      }));
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                      Math.max(options.width, options.height) === 1024
+                        ? 'bg-amber-600 text-black shadow-xs'
+                        : 'bg-[#151722] hover:bg-[#1e202f] border border-amber-800/80 text-amber-300'
+                    }`}
+                    title="Scale to 1024px Super Mega HD (Highest safe lobby preview resolution)"
+                  >
+                    ⚡ 1024px Super HD
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => setAutoScaledNotice(null)}
-                  className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                  onClick={() => {
+                    const { width: tw, height: th } = calculateMapHdDimensions(sourceCanvas.width, sourceCanvas.height, 512);
+                    setOptions((prev) => ({
+                      ...prev,
+                      width: tw,
+                      height: th,
+                    }));
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+                    Math.max(options.width, options.height) === 512
+                      ? 'bg-emerald-600 text-white font-bold'
+                      : 'bg-[#151722] hover:bg-[#1e202f] border border-slate-700 text-slate-300'
+                  }`}
+                  title="Scale down to max 512px for standard HD"
                 >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Keep Optimized</span>
+                  512px HD
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
+                    const { width: tw, height: th } = calculateMapHdDimensions(sourceCanvas.width, sourceCanvas.height, 256);
                     setOptions((prev) => ({
                       ...prev,
-                      width: autoScaledNotice.originalW,
-                      height: autoScaledNotice.originalH,
+                      width: tw,
+                      height: th,
                     }));
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-[#151722] hover:bg-[#1e202f] border border-slate-700 text-slate-200 text-xs font-mono transition-colors cursor-pointer"
-                  title="Switch to full original resolution (creates 23k+ lines)"
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+                    Math.max(options.width, options.height) === 256
+                      ? 'bg-red-600 text-white font-bold'
+                      : 'bg-[#151722] hover:bg-[#1e202f] border border-slate-700 text-slate-300'
+                  }`}
+                  title="Scale down to max 256px for ultra-compact lobby downloads"
                 >
-                  Full {autoScaledNotice.originalW}×{autoScaledNotice.originalH}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setAutoScaledNotice(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
-                  title="Dismiss"
-                >
-                  <X className="w-4 h-4" />
+                  256px Fast
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Tactical Conversion Error / Guard Alert */}
+          {conversionError && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-red-950/90 border border-red-600/90 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fade-in">
+              <div className="flex items-start gap-3 text-red-200">
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-red-100 text-sm font-['Rajdhani',sans-serif] uppercase tracking-wide">
+                    PreviewPack Dimension Guard
+                  </div>
+                  <p className="text-red-300 mt-0.5 font-mono leading-relaxed">{conversionError}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleOptimizeToCncNetStandard}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs shrink-0 cursor-pointer shadow transition-colors font-mono"
+              >
+                Auto-Fix: Switch to 512px Ultra HD
+              </button>
             </div>
           )}
 

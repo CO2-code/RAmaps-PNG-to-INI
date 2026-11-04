@@ -516,6 +516,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
               dithering: false,
               compressionOptimization: 'max', // Maximum lossless dictionary compression
               maintainAspectRatio: true,
+              sharpening: true,
             });
 
             currentMapContent = injectPreviewIntoMapFile(currentMapContent, previewResult.fullIniText);
@@ -671,6 +672,7 @@ export const BatchMapModal: React.FC<BatchMapModalProps> = ({ isOpen, onClose, i
             dithering: false,
             compressionOptimization: 'max',
             maintainAspectRatio: true,
+            sharpening: true,
           });
 
           const mergedText = injectPreviewIntoMapFile(item.content, previewResult.fullIniText);

@@ -32,13 +32,21 @@ export const ReverseDecoderModal: React.FC<ReverseDecoderModalProps> = ({
       setDecoded(res);
 
       setTimeout(() => {
-        if (canvasRef.current) {
+        if (canvasRef.current && res.imageData) {
           const canvas = canvasRef.current;
-          canvas.width = res.width;
-          canvas.height = res.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.putImageData(res.imageData, 0, 0);
+          const w = res.imageData.width || res.width;
+          const h = res.imageData.height || res.height;
+          if (w > 0 && h > 0) {
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              try {
+                ctx.putImageData(res.imageData, 0, 0);
+              } catch (drawErr) {
+                console.warn('ReverseDecoderModal putImageData error:', drawErr);
+              }
+            }
           }
         }
       }, 50);

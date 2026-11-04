@@ -22,19 +22,35 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
   const lineCount = result?.lineCount ?? 0;
   const isLarge = lineCount > 200;
 
-  // Windowed code preview for high performance (prevents browser lockup on 23k+ lines)
+  // Windowed code preview for high performance (prevents browser lockup on large line counts)
   const displaySnippet = useMemo(() => {
     if (!result) return '';
     if (!isLarge || showFullCode) {
       return result.fullIniText;
     }
 
-    const lines = result.fullIniText.split('\n');
-    const head = lines.slice(0, 45).join('\n');
-    const tail = lines.slice(-15).join('\n');
-    const hiddenCount = lines.length - 60;
+    const text = result.fullIniText;
+    // Find index after 45th newline
+    let headEnd = 0;
+    for (let i = 0; i < 45; i++) {
+      const idx = text.indexOf('\n', headEnd);
+      if (idx === -1) break;
+      headEnd = idx + 1;
+    }
 
-    return `${head}\n\n; ---------------------------------------------------------------------------\n; ... [ ${hiddenCount.toLocaleString()} MORE LINES IN [PreviewPack] HIDDEN FROM PREVIEW ] ...\n; (Full ${lines.length.toLocaleString()} lines will be copied or downloaded completely!)\n; ---------------------------------------------------------------------------\n\n${tail}`;
+    // Find index before last 15 newlines
+    let tailStart = text.length;
+    for (let i = 0; i < 15; i++) {
+      const idx = text.lastIndexOf('\n', tailStart - 1);
+      if (idx === -1) break;
+      tailStart = idx;
+    }
+
+    const head = text.substring(0, headEnd > 0 ? headEnd - 1 : text.length);
+    const tail = tailStart < text.length ? text.substring(tailStart + 1) : '';
+    const hiddenCount = Math.max(0, result.lineCount - 60);
+
+    return `${head}\n\n; ---------------------------------------------------------------------------\n; ... [ ${hiddenCount.toLocaleString()} MORE LINES IN [PreviewPack] HIDDEN FROM PREVIEW ] ...\n; (Full ${result.lineCount.toLocaleString()} lines will be copied or downloaded completely!)\n; ---------------------------------------------------------------------------\n\n${tail}`;
   }, [result, isLarge, showFullCode]);
 
   if (!result) return null;
@@ -90,6 +106,17 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
     document.body.removeChild(a);
   };
 
+  const handleDownloadXccTxt = () => {
+    const blob = new Blob([result.fullIniText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `preview_${result.targetWidth}x${result.targetHeight}_xcc.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   return (
     <div className="bg-[#0c0d12] border border-[#2f1015] rounded-2xl p-6 sm:p-7 shadow-[0_4px_25px_rgba(0,0,0,0.7)] space-y-4">
       {/* Header and Actions Bar */}
@@ -102,9 +129,12 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
             <span className="text-xs font-mono font-bold text-red-400 bg-red-950/80 border border-red-800/80 px-2 py-0.5 rounded">
               {result.lineCount.toLocaleString()} lines
             </span>
+            <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-950/80 border border-amber-800/80 px-2 py-0.5 rounded">
+              XCC Port
+            </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5 font-mono">
-            Formatted with authentic [Preview] and [PreviewPack] base64 blocks
+            Formatted with authentic [Preview] and [PreviewPack] base64 blocks (OlafvdSpek/xcc standard)
           </p>
         </div>
 
@@ -156,6 +186,16 @@ export const IniOutputViewer: React.FC<IniOutputViewerProps> = ({
           >
             <Download className="w-3.5 h-3.5" />
             <span>.INI</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadXccTxt}
+            className="px-3 py-1.5 rounded-lg bg-amber-950/60 hover:bg-amber-900/80 border border-amber-800 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Download preview snippet as an XCC Mixer .txt file (copy_as_map_ts_preview output)"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>XCC .TXT</span>
           </button>
         </div>
       </div>
